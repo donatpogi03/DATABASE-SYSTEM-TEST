@@ -11,14 +11,22 @@
       --excel-border: #d4d4d4;
     }
     
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    /* Layout fix for full-screen flex scrolling */
+    html, body {
+      height: 100%;
       margin: 0;
       padding: 0;
-      background-color: #f3f3f3;
+      overflow: hidden; /* Prevents whole-page double scrollbars */
     }
 
-    /* Excel Top Header */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f3f3f3;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header Bar */
     header {
       background-color: var(--excel-green);
       color: white;
@@ -27,6 +35,7 @@
       justify-content: space-between;
       align-items: center;
       box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      flex-shrink: 0;
     }
 
     header h1 { margin: 0; font-size: 18px; font-weight: 600; }
@@ -39,6 +48,7 @@
       display: flex;
       gap: 10px;
       align-items: center;
+      flex-shrink: 0;
     }
 
     .toolbar input {
@@ -61,12 +71,12 @@
 
     .toolbar button:hover { background-color: var(--excel-dark-green); }
 
-    /* Excel Table Container */
+    /* Scrollable Table Container Fix */
     .table-container {
-      overflow: auto;
-      max-height: calc(100vh - 170px);
+      flex: 1; /* Takes up all remaining screen height */
+      overflow: auto; /* Enables vertical and horizontal scrollbars */
       background: white;
-      margin: 15px;
+      margin: 10px 15px 45px 15px; /* Bottom margin leaves space for fixed tabs */
       border: 1px solid var(--excel-border);
     }
 
@@ -84,19 +94,26 @@
       white-space: nowrap;
     }
 
-    /* Editable cell focus indicator */
+    /* Active cell focus indicator */
     table.excel-grid td[contenteditable="true"]:focus {
-      outline: 2px solid var(--excel-green);
-      background-color: #e8f5e9;
+      outline: 2px solid var(--excel-green) !important;
+      background-color: #ffffff;
     }
 
-    /* Column Headers (A, B, C...) */
+    /* Saving feedback states */
+    td.saving { background-color: #fff9c4 !important; } /* Yellow */
+    td.saved { background-color: #e8f5e9 !important; }  /* Light Green */
+
+    /* Sticky Headers so Column A/B/C stays visible while scrolling */
     table.excel-grid th {
       background-color: #f8f9fa;
       color: #555;
       font-weight: 600;
       text-align: center;
       user-select: none;
+      position: sticky;
+      top: 0;
+      z-index: 2;
     }
 
     /* Row Numbers (1, 2, 3...) */
@@ -106,6 +123,9 @@
       text-align: center;
       font-weight: 600;
       width: 40px;
+      position: sticky;
+      left: 0;
+      z-index: 1;
     }
 
     /* Bottom Sheet Tabs */
@@ -114,14 +134,17 @@
       bottom: 0;
       left: 0;
       right: 0;
+      height: 35px;
       background: #e6e6e6;
       border-top: 1px solid var(--excel-border);
       display: flex;
       padding-left: 15px;
+      overflow-x: auto; /* Scroll tabs horizontally if there are many */
+      z-index: 10;
     }
 
     .tab-button {
-      padding: 8px 20px;
+      padding: 6px 18px;
       border: 1px solid var(--excel-border);
       border-bottom: none;
       background: #d9d9d9;
@@ -131,6 +154,7 @@
       margin-right: 2px;
       border-top-left-radius: 4px;
       border-top-right-radius: 4px;
+      white-space: nowrap;
     }
 
     .tab-button.active {
@@ -147,7 +171,7 @@
   </header>
 
   <div class="toolbar">
-    <input type="text" id="userInput" placeholder="Add new row to active sheet..." />
+    <input type="text" id="userInput" placeholder="Add row to active sheet..." />
     <button onclick="addEntry()">+ Add Row</button>
   </div>
 
@@ -234,9 +258,11 @@
         bodyHTML += `<tr><td class="row-index">${rowIndex + 1}</td>`;
         for (let colIndex = 0; colIndex < maxCols; colIndex++) {
           const cellValue = row[colIndex] !== undefined ? row[colIndex] : "";
+          
           bodyHTML += `<td 
             contenteditable="true" 
-            onblur="saveCellEdit(${rowIndex}, ${colIndex}, this.innerText)"
+            onkeydown="if(event.key==='Enter'){ event.preventDefault(); this.blur(); }"
+            onblur="saveCellEdit(${rowIndex}, ${colIndex}, this)"
           >${cellValue}</td>`;
         }
         bodyHTML += "</tr>";
@@ -245,8 +271,12 @@
       table.innerHTML = headerHTML + bodyHTML;
     }
 
-    // Function to update individual cell edits back to Google Sheets
-    async function saveCellEdit(rowIndex, colIndex, newValue) {
+    async function saveCellEdit(rowIndex, colIndex, cellElement) {
+      const newValue = cellElement.innerText.trim();
+      
+      // Flash yellow while saving
+      cellElement.classList.add("saving");
+
       try {
         await fetch(API_URL, {
           method: "POST",
@@ -259,9 +289,21 @@
             value: newValue
           })
         });
-        console.log(`Cell [${rowIndex}, ${colIndex}] updated to: ${newValue}`);
+
+        // Update local memory so data stays intact on tab switch
+        if (globalSheetData[activeSheetName] && globalSheetData[activeSheetName][rowIndex]) {
+          globalSheetData[activeSheetName][rowIndex][colIndex] = newValue;
+        }
+
+        // Flash green when saved
+        cellElement.classList.remove("saving");
+        cellElement.classList.add("saved");
+        setTimeout(() => cellElement.classList.remove("saved"), 1200);
+
       } catch (err) {
         console.error("Failed to update cell:", err);
+        cellElement.classList.remove("saving");
+        alert("Failed to save cell edit!");
       }
     }
 
