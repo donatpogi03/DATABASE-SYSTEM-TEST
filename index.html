@@ -39,7 +39,7 @@
 
     header h1 { margin: 0; font-size: 18px; font-weight: 600; }
 
-    /* Search Toolbar */
+    /* Search Container & Dropdown Styling */
     .toolbar {
       background: #ffffff;
       padding: 10px 20px;
@@ -48,20 +48,69 @@
       gap: 10px;
       align-items: center;
       flex-shrink: 0;
+      position: relative;
     }
 
-    .toolbar input {
+    .search-box-wrapper {
+      position: relative;
+      width: 450px;
+    }
+
+    .search-box-wrapper input {
       padding: 8px 12px;
       border: 1px solid #ccc;
       border-radius: 4px;
-      width: 350px;
+      width: 100%;
+      box-sizing: border-box;
       font-size: 14px;
     }
 
-    .toolbar .match-count {
+    /* Search Results Dropdown Menu */
+    .search-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid var(--excel-border);
+      border-radius: 0 0 6px 6px;
+      max-height: 280px;
+      overflow-y: auto;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 100;
+      display: none;
+    }
+
+    .dropdown-item {
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
       font-size: 13px;
-      color: #666;
-      font-weight: 500;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dropdown-item:hover {
+      background-color: #f0f7f3;
+    }
+
+    .dropdown-item .sheet-badge {
+      background: #e8f5e9;
+      color: var(--excel-green);
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .dropdown-item .match-text {
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* Scrollable Table Container */
@@ -93,9 +142,14 @@
       background-color: #ffffff;
     }
 
+    /* Target row highlight */
+    tr.highlight-target {
+      background-color: #fffde7 !important;
+    }
+
     /* Saving feedback states */
-    td.saving { background-color: #fff9c4 !important; } /* Yellow */
-    td.saved { background-color: #e8f5e9 !important; }  /* Light Green */
+    td.saving { background-color: #fff9c4 !important; }
+    td.saved { background-color: #e8f5e9 !important; }
 
     /* Sticky Headers */
     table.excel-grid th {
@@ -163,16 +217,15 @@
     <h1>📊 Google Sheets - Interactive Excel Viewer</h1>
   </header>
 
-  <!-- Search Bar Toolbar -->
   <div class="toolbar">
-    <input type="text" id="searchInput" placeholder="🔍 Search active sheet..." oninput="filterGrid()" />
-    <span class="match-count" id="matchCount"></span>
+    <div class="search-box-wrapper">
+      <input type="text" id="searchInput" placeholder="🔍 Type at least 2 characters to search all sheets..." oninput="debouncedSearch()" autocomplete="off" />
+      <div class="search-dropdown" id="searchDropdown"></div>
+    </div>
   </div>
 
-  <div class="table-container">
-    <table class="excel-grid" id="excelTable">
-      <!-- Grid content renders here -->
-    </table>
+  <div class="table-container" id="tableContainer">
+    <table class="excel-grid" id="excelTable"></table>
   </div>
 
   <div class="tabs-bar" id="tabsBar"></div>
@@ -182,6 +235,7 @@
 
     let globalSheetData = {};
     let activeSheetName = "";
+    let searchTimeout = null;
 
     function getColumnLetter(colIndex) {
       let letter = "";
@@ -224,13 +278,9 @@
       });
     }
 
-    function switchSheet(sheetName) {
+    function switchSheet(sheetName, targetRowIndex = null) {
       activeSheetName = sheetName;
       renderTabs(Object.keys(globalSheetData));
-
-      // Reset search input on tab change
-      document.getElementById("searchInput").value = "";
-      document.getElementById("matchCount").textContent = "";
 
       const gridData = globalSheetData[sheetName] || [];
       const table = document.getElementById("excelTable");
@@ -250,7 +300,8 @@
 
       let bodyHTML = "<tbody>";
       gridData.forEach((row, rowIndex) => {
-        bodyHTML += `<tr data-row-idx="${rowIndex}"><td class="row-index">${rowIndex + 1}</td>`;
+        const isTarget = targetRowIndex === rowIndex ? "highlight-target" : "";
+        bodyHTML += `<tr id="row-${rowIndex}" class="${isTarget}"><td class="row-index">${rowIndex + 1}</td>`;
         for (let colIndex = 0; colIndex < maxCols; colIndex++) {
           const cellValue = row[colIndex] !== undefined ? row[colIndex] : "";
           
@@ -265,31 +316,81 @@
       bodyHTML += "</tbody>";
 
       table.innerHTML = headerHTML + bodyHTML;
-    }
 
-    // Real-Time Filter Function
-    function filterGrid() {
-      const query = document.getElementById("searchInput").value.toLowerCase().trim();
-      const rows = document.querySelectorAll("#excelTable tbody tr");
-      let visibleCount = 0;
-
-      rows.forEach(row => {
-        const textContent = row.innerText.toLowerCase();
-        if (!query || textContent.includes(query)) {
-          row.style.display = "";
-          visibleCount++;
-        } else {
-          row.style.display = "none";
-        }
-      });
-
-      const matchLabel = document.getElementById("matchCount");
-      if (query) {
-        matchLabel.textContent = `Showing ${visibleCount} of ${rows.length} rows`;
-      } else {
-        matchLabel.textContent = "";
+      if (targetRowIndex !== null) {
+        setTimeout(() => {
+          const rowElem = document.getElementById(`row-${targetRowIndex}`);
+          if (rowElem) {
+            rowElem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
       }
     }
+
+    // Debounce wrapper to stop browser freeze on fast typing
+    function debouncedSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(globalSearch, 300); // Waits 300ms after you stop typing
+    }
+
+    // Fast, non-blocking Global Search
+    function globalSearch() {
+      const query = document.getElementById("searchInput").value.toLowerCase().trim();
+      const dropdown = document.getElementById("searchDropdown");
+
+      // Don't search for 1 character or empty strings (prevents crash)
+      if (!query || query.length < 2) {
+        dropdown.style.display = "none";
+        dropdown.innerHTML = "";
+        return;
+      }
+
+      let matches = [];
+      const MAX_RESULTS = 15; // Cap results at 15 to keep browser silky smooth
+
+      // Search across sheets with early exit loop
+      sheetLoop: for (const [sheetName, rows] of Object.entries(globalSheetData)) {
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+          const row = rows[rowIndex];
+          
+          // Fast check if any cell in row contains query
+          const rowText = row.join(" ").toLowerCase();
+          if (rowText.includes(query)) {
+            const previewText = row.filter(cell => cell !== "" && cell !== null).join(" | ");
+            matches.push({ sheetName, rowIndex, previewText });
+
+            if (matches.length >= MAX_RESULTS) break sheetLoop; // Stop searching once 15 matches found
+          }
+        }
+      }
+
+      dropdown.innerHTML = "";
+      if (matches.length === 0) {
+        dropdown.innerHTML = `<div class="dropdown-item" style="color:#888; cursor:default;">No matches found</div>`;
+      } else {
+        matches.forEach(match => {
+          const item = document.createElement("div");
+          item.className = "dropdown-item";
+          item.innerHTML = `
+            <span class="match-text">${match.previewText}</span>
+            <span class="sheet-badge">${match.sheetName} (Row ${match.rowIndex + 1})</span>
+          `;
+          item.onclick = () => {
+            dropdown.style.display = "none";
+            switchSheet(match.sheetName, match.rowIndex);
+          };
+          dropdown.appendChild(item);
+        });
+      }
+
+      dropdown.style.display = "block";
+    }
+
+    document.addEventListener("click", function(e) {
+      if (!e.target.closest(".search-box-wrapper")) {
+        document.getElementById("searchDropdown").style.display = "none";
+      }
+    });
 
     async function saveCellEdit(rowIndex, colIndex, cellElement) {
       const newValue = cellElement.innerText.trim();
