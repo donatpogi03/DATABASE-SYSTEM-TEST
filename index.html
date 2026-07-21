@@ -84,6 +84,12 @@
       white-space: nowrap;
     }
 
+    /* Editable cell focus indicator */
+    table.excel-grid td[contenteditable="true"]:focus {
+      outline: 2px solid var(--excel-green);
+      background-color: #e8f5e9;
+    }
+
     /* Column Headers (A, B, C...) */
     table.excel-grid th {
       background-color: #f8f9fa;
@@ -137,11 +143,11 @@
 <body>
 
   <header>
-    <h1>📊 Google Sheets - Excel Viewer</h1>
+    <h1>📊 Google Sheets - Interactive Excel Viewer</h1>
   </header>
 
   <div class="toolbar">
-    <input type="text" id="userInput" placeholder="Add text to active sheet..." />
+    <input type="text" id="userInput" placeholder="Add new row to active sheet..." />
     <button onclick="addEntry()">+ Add Row</button>
   </div>
 
@@ -155,13 +161,11 @@
   <div class="tabs-bar" id="tabsBar"></div>
 
   <script>
-    // ⚠️ PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE
     const API_URL = "https://script.google.com/macros/s/AKfycbyyNSISfsoH6LoL9u5FYFZvnwt5WyCvkwDmwlPRJpN9jMAHA2t6VdWQ-cfokxNZ-CdR/exec";
 
     let globalSheetData = {};
     let activeSheetName = "";
 
-    // Convert number to Excel column header letter (0->A, 1->B, etc.)
     function getColumnLetter(colIndex) {
       let letter = "";
       while (colIndex >= 0) {
@@ -182,7 +186,7 @@
 
           if (sheetNames.length > 0) {
             renderTabs(sheetNames);
-            switchSheet(sheetNames[0]); // Default to first sheet
+            switchSheet(activeSheetName || sheetNames[0]);
           }
         }
       } catch (err) {
@@ -218,24 +222,47 @@
 
       // 1. Build Header Row (A, B, C, D...)
       const maxCols = Math.max(...gridData.map(r => r.length));
-      let headerHTML = "<tr><th></th>"; // empty top-left cell
+      let headerHTML = "<tr><th></th>";
       for (let c = 0; c < maxCols; c++) {
         headerHTML += `<th>${getColumnLetter(c)}</th>`;
       }
       headerHTML += "</tr>";
 
-      // 2. Build Data Rows (1, 2, 3...)
+      // 2. Build Editable Data Rows
       let bodyHTML = "";
       gridData.forEach((row, rowIndex) => {
         bodyHTML += `<tr><td class="row-index">${rowIndex + 1}</td>`;
         for (let colIndex = 0; colIndex < maxCols; colIndex++) {
           const cellValue = row[colIndex] !== undefined ? row[colIndex] : "";
-          bodyHTML += `<td>${cellValue}</td>`;
+          bodyHTML += `<td 
+            contenteditable="true" 
+            onblur="saveCellEdit(${rowIndex}, ${colIndex}, this.innerText)"
+          >${cellValue}</td>`;
         }
         bodyHTML += "</tr>";
       });
 
       table.innerHTML = headerHTML + bodyHTML;
+    }
+
+    // Function to update individual cell edits back to Google Sheets
+    async function saveCellEdit(rowIndex, colIndex, newValue) {
+      try {
+        await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "updateCell",
+            sheetName: activeSheetName,
+            rowIndex: rowIndex,
+            colIndex: colIndex,
+            value: newValue
+          })
+        });
+        console.log(`Cell [${rowIndex}, ${colIndex}] updated to: ${newValue}`);
+      } catch (err) {
+        console.error("Failed to update cell:", err);
+      }
     }
 
     async function addEntry() {
@@ -250,7 +277,7 @@
       });
 
       input.value = "";
-      loadAllSheets(); // Refresh grid
+      loadAllSheets();
     }
 
     loadAllSheets();
