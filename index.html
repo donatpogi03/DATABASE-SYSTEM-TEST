@@ -11,12 +11,11 @@
       --excel-border: #d4d4d4;
     }
     
-    /* Layout fix for full-screen flex scrolling */
     html, body {
       height: 100%;
       margin: 0;
       padding: 0;
-      overflow: hidden; /* Prevents whole-page double scrollbars */
+      overflow: hidden;
     }
 
     body {
@@ -40,7 +39,7 @@
 
     header h1 { margin: 0; font-size: 18px; font-weight: 600; }
 
-    /* Input Toolbar */
+    /* Search Toolbar */
     .toolbar {
       background: #ffffff;
       padding: 10px 20px;
@@ -55,28 +54,22 @@
       padding: 8px 12px;
       border: 1px solid #ccc;
       border-radius: 4px;
-      width: 300px;
+      width: 350px;
       font-size: 14px;
     }
 
-    .toolbar button {
-      background-color: var(--excel-green);
-      color: white;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-weight: 600;
+    .toolbar .match-count {
+      font-size: 13px;
+      color: #666;
+      font-weight: 500;
     }
 
-    .toolbar button:hover { background-color: var(--excel-dark-green); }
-
-    /* Scrollable Table Container Fix */
+    /* Scrollable Table Container */
     .table-container {
-      flex: 1; /* Takes up all remaining screen height */
-      overflow: auto; /* Enables vertical and horizontal scrollbars */
+      flex: 1;
+      overflow: auto;
       background: white;
-      margin: 10px 15px 45px 15px; /* Bottom margin leaves space for fixed tabs */
+      margin: 10px 15px 45px 15px;
       border: 1px solid var(--excel-border);
     }
 
@@ -104,7 +97,7 @@
     td.saving { background-color: #fff9c4 !important; } /* Yellow */
     td.saved { background-color: #e8f5e9 !important; }  /* Light Green */
 
-    /* Sticky Headers so Column A/B/C stays visible while scrolling */
+    /* Sticky Headers */
     table.excel-grid th {
       background-color: #f8f9fa;
       color: #555;
@@ -116,7 +109,7 @@
       z-index: 2;
     }
 
-    /* Row Numbers (1, 2, 3...) */
+    /* Row Numbers */
     table.excel-grid td.row-index {
       background-color: #f8f9fa;
       color: #777;
@@ -139,7 +132,7 @@
       border-top: 1px solid var(--excel-border);
       display: flex;
       padding-left: 15px;
-      overflow-x: auto; /* Scroll tabs horizontally if there are many */
+      overflow-x: auto;
       z-index: 10;
     }
 
@@ -170,18 +163,18 @@
     <h1>📊 Google Sheets - Interactive Excel Viewer</h1>
   </header>
 
+  <!-- Search Bar Toolbar -->
   <div class="toolbar">
-    <input type="text" id="userInput" placeholder="Add row to active sheet..." />
-    <button onclick="addEntry()">+ Add Row</button>
+    <input type="text" id="searchInput" placeholder="🔍 Search active sheet..." oninput="filterGrid()" />
+    <span class="match-count" id="matchCount"></span>
   </div>
 
   <div class="table-container">
     <table class="excel-grid" id="excelTable">
-      <!-- Excel Grid will load here -->
+      <!-- Grid content renders here -->
     </table>
   </div>
 
-  <!-- Excel Bottom Sheet Navigation Tabs -->
   <div class="tabs-bar" id="tabsBar"></div>
 
   <script>
@@ -235,6 +228,10 @@
       activeSheetName = sheetName;
       renderTabs(Object.keys(globalSheetData));
 
+      // Reset search input on tab change
+      document.getElementById("searchInput").value = "";
+      document.getElementById("matchCount").textContent = "";
+
       const gridData = globalSheetData[sheetName] || [];
       const table = document.getElementById("excelTable");
       table.innerHTML = "";
@@ -244,18 +241,16 @@
         return;
       }
 
-      // 1. Build Header Row (A, B, C, D...)
       const maxCols = Math.max(...gridData.map(r => r.length));
-      let headerHTML = "<tr><th></th>";
+      let headerHTML = "<thead><tr><th></th>";
       for (let c = 0; c < maxCols; c++) {
         headerHTML += `<th>${getColumnLetter(c)}</th>`;
       }
-      headerHTML += "</tr>";
+      headerHTML += "</tr></thead>";
 
-      // 2. Build Editable Data Rows
-      let bodyHTML = "";
+      let bodyHTML = "<tbody>";
       gridData.forEach((row, rowIndex) => {
-        bodyHTML += `<tr><td class="row-index">${rowIndex + 1}</td>`;
+        bodyHTML += `<tr data-row-idx="${rowIndex}"><td class="row-index">${rowIndex + 1}</td>`;
         for (let colIndex = 0; colIndex < maxCols; colIndex++) {
           const cellValue = row[colIndex] !== undefined ? row[colIndex] : "";
           
@@ -267,14 +262,37 @@
         }
         bodyHTML += "</tr>";
       });
+      bodyHTML += "</tbody>";
 
       table.innerHTML = headerHTML + bodyHTML;
     }
 
+    // Real-Time Filter Function
+    function filterGrid() {
+      const query = document.getElementById("searchInput").value.toLowerCase().trim();
+      const rows = document.querySelectorAll("#excelTable tbody tr");
+      let visibleCount = 0;
+
+      rows.forEach(row => {
+        const textContent = row.innerText.toLowerCase();
+        if (!query || textContent.includes(query)) {
+          row.style.display = "";
+          visibleCount++;
+        } else {
+          row.style.display = "none";
+        }
+      });
+
+      const matchLabel = document.getElementById("matchCount");
+      if (query) {
+        matchLabel.textContent = `Showing ${visibleCount} of ${rows.length} rows`;
+      } else {
+        matchLabel.textContent = "";
+      }
+    }
+
     async function saveCellEdit(rowIndex, colIndex, cellElement) {
       const newValue = cellElement.innerText.trim();
-      
-      // Flash yellow while saving
       cellElement.classList.add("saving");
 
       try {
@@ -290,12 +308,10 @@
           })
         });
 
-        // Update local memory so data stays intact on tab switch
         if (globalSheetData[activeSheetName] && globalSheetData[activeSheetName][rowIndex]) {
           globalSheetData[activeSheetName][rowIndex][colIndex] = newValue;
         }
 
-        // Flash green when saved
         cellElement.classList.remove("saving");
         cellElement.classList.add("saved");
         setTimeout(() => cellElement.classList.remove("saved"), 1200);
@@ -305,21 +321,6 @@
         cellElement.classList.remove("saving");
         alert("Failed to save cell edit!");
       }
-    }
-
-    async function addEntry() {
-      const input = document.getElementById("userInput");
-      const val = input.value.trim();
-      if (!val) return alert("Please type something!");
-
-      await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ text: val, sheetName: activeSheetName })
-      });
-
-      input.value = "";
-      loadAllSheets();
     }
 
     loadAllSheets();
