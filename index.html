@@ -3,67 +3,257 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Google Sheets Text DB</title>
+  <title>Excel Web Viewer</title>
   <style>
-    body { font-family: sans-serif; max-width: 500px; margin: 40px auto; padding: 0 20px; }
-    input, button { padding: 10px; margin-top: 10px; width: 100%; box-sizing: border-box; }
-    ul { background: #f4f4f4; padding: 20px 40px; border-radius: 8px; }
+    :root {
+      --excel-green: #107c41;
+      --excel-dark-green: #0b582e;
+      --excel-border: #d4d4d4;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f3f3f3;
+    }
+
+    /* Excel Top Header */
+    header {
+      background-color: var(--excel-green);
+      color: white;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+
+    /* Input Toolbar */
+    .toolbar {
+      background: #ffffff;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--excel-border);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .toolbar input {
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 300px;
+      font-size: 14px;
+    }
+
+    .toolbar button {
+      background-color: var(--excel-green);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .toolbar button:hover { background-color: var(--excel-dark-green); }
+
+    /* Excel Table Container */
+    .table-container {
+      overflow: auto;
+      max-height: calc(100vh - 170px);
+      background: white;
+      margin: 15px;
+      border: 1px solid var(--excel-border);
+    }
+
+    /* Excel Grid Styling */
+    table.excel-grid {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 13px;
+    }
+
+    table.excel-grid th, table.excel-grid td {
+      border: 1px solid var(--excel-border);
+      padding: 6px 12px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    /* Column Headers (A, B, C...) */
+    table.excel-grid th {
+      background-color: #f8f9fa;
+      color: #555;
+      font-weight: 600;
+      text-align: center;
+      user-select: none;
+    }
+
+    /* Row Numbers (1, 2, 3...) */
+    table.excel-grid td.row-index {
+      background-color: #f8f9fa;
+      color: #777;
+      text-align: center;
+      font-weight: 600;
+      width: 40px;
+    }
+
+    /* Bottom Sheet Tabs */
+    .tabs-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #e6e6e6;
+      border-top: 1px solid var(--excel-border);
+      display: flex;
+      padding-left: 15px;
+    }
+
+    .tab-button {
+      padding: 8px 20px;
+      border: 1px solid var(--excel-border);
+      border-bottom: none;
+      background: #d9d9d9;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      margin-right: 2px;
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+    }
+
+    .tab-button.active {
+      background: white;
+      color: var(--excel-green);
+      border-top: 3px solid var(--excel-green);
+    }
   </style>
 </head>
 <body>
 
-  <h2>Submit Text to Google Sheet</h2>
-  <input type="text" id="userInput" placeholder="Type some text here..." />
-  <button onclick="sendText()">Save Text</button>
+  <header>
+    <h1>📊 Google Sheets - Excel Viewer</h1>
+  </header>
 
-  <h3>Stored Texts:</h3>
-  <ul id="textList">Loading...</ul>
+  <div class="toolbar">
+    <input type="text" id="userInput" placeholder="Add text to active sheet..." />
+    <button onclick="addEntry()">+ Add Row</button>
+  </div>
+
+  <div class="table-container">
+    <table class="excel-grid" id="excelTable">
+      <!-- Excel Grid will load here -->
+    </table>
+  </div>
+
+  <!-- Excel Bottom Sheet Navigation Tabs -->
+  <div class="tabs-bar" id="tabsBar"></div>
 
   <script>
     // ⚠️ PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE
     const API_URL = "https://script.google.com/macros/s/AKfycbyyNSISfsoH6LoL9u5FYFZvnwt5WyCvkwDmwlPRJpN9jMAHA2t6VdWQ-cfokxNZ-CdR/exec";
 
-    async function fetchTexts() {
-      const listElement = document.getElementById("textList");
+    let globalSheetData = {};
+    let activeSheetName = "";
+
+    // Convert number to Excel column header letter (0->A, 1->B, etc.)
+    function getColumnLetter(colIndex) {
+      let letter = "";
+      while (colIndex >= 0) {
+        letter = String.fromCharCode((colIndex % 26) + 65) + letter;
+        colIndex = Math.floor(colIndex / 26) - 1;
+      }
+      return letter;
+    }
+
+    async function loadAllSheets() {
       try {
-        const response = await fetch(API_URL);
-        const result = await response.json();
-        
-        listElement.innerHTML = "";
-        
-        result.data.forEach(row => {
-          const li = document.createElement("li");
-          li.textContent = `${row[0]}: ${row[1]}`;
-          listElement.appendChild(li);
-        });
+        const res = await fetch(API_URL);
+        const json = await res.json();
+
+        if (json.status === "success") {
+          globalSheetData = json.sheets;
+          const sheetNames = Object.keys(globalSheetData);
+
+          if (sheetNames.length > 0) {
+            renderTabs(sheetNames);
+            switchSheet(sheetNames[0]); // Default to first sheet
+          }
+        }
       } catch (err) {
-        listElement.innerHTML = "<li>Failed to load data</li>";
-        console.error(err);
+        console.error("Failed to load spreadsheet:", err);
       }
     }
 
-    async function sendText() {
+    function renderTabs(names) {
+      const tabsBar = document.getElementById("tabsBar");
+      tabsBar.innerHTML = "";
+
+      names.forEach(name => {
+        const btn = document.createElement("button");
+        btn.className = `tab-button ${name === activeSheetName ? 'active' : ''}`;
+        btn.textContent = name;
+        btn.onclick = () => switchSheet(name);
+        tabsBar.appendChild(btn);
+      });
+    }
+
+    function switchSheet(sheetName) {
+      activeSheetName = sheetName;
+      renderTabs(Object.keys(globalSheetData));
+
+      const gridData = globalSheetData[sheetName] || [];
+      const table = document.getElementById("excelTable");
+      table.innerHTML = "";
+
+      if (gridData.length === 0) {
+        table.innerHTML = "<tr><td style='padding:20px;'>Sheet is empty</td></tr>";
+        return;
+      }
+
+      // 1. Build Header Row (A, B, C, D...)
+      const maxCols = Math.max(...gridData.map(r => r.length));
+      let headerHTML = "<tr><th></th>"; // empty top-left cell
+      for (let c = 0; c < maxCols; c++) {
+        headerHTML += `<th>${getColumnLetter(c)}</th>`;
+      }
+      headerHTML += "</tr>";
+
+      // 2. Build Data Rows (1, 2, 3...)
+      let bodyHTML = "";
+      gridData.forEach((row, rowIndex) => {
+        bodyHTML += `<tr><td class="row-index">${rowIndex + 1}</td>`;
+        for (let colIndex = 0; colIndex < maxCols; colIndex++) {
+          const cellValue = row[colIndex] !== undefined ? row[colIndex] : "";
+          bodyHTML += `<td>${cellValue}</td>`;
+        }
+        bodyHTML += "</tr>";
+      });
+
+      table.innerHTML = headerHTML + bodyHTML;
+    }
+
+    async function addEntry() {
       const input = document.getElementById("userInput");
-      const text = input.value.trim();
-      
-      if (!text) return alert("Please enter text first!");
+      const val = input.value.trim();
+      if (!val) return alert("Please type something!");
 
-      try {
-        await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ text: text })
-        });
-        
-        input.value = "";
-        fetchTexts();
-      } catch (err) {
-        alert("Error saving text!");
-        console.error(err);
-      }
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ text: val, sheetName: activeSheetName })
+      });
+
+      input.value = "";
+      loadAllSheets(); // Refresh grid
     }
 
-    fetchTexts();
+    loadAllSheets();
   </script>
 </body>
 </html>
