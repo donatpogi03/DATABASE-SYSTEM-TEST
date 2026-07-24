@@ -45,10 +45,28 @@
       padding: 10px 20px;
       border-bottom: 1px solid var(--excel-border);
       display: flex;
-      gap: 10px;
+      gap: 12px;
       align-items: center;
       flex-shrink: 0;
       position: relative;
+    }
+
+    .btn-add-drive {
+      background-color: var(--excel-green);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-add-drive:hover {
+      background-color: var(--excel-dark-green);
     }
 
     .search-box-wrapper {
@@ -209,6 +227,37 @@
       color: var(--excel-green);
       border-top: 3px solid var(--excel-green);
     }
+
+    /* Confirmation Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      display: none;
+    }
+
+    .modal-card {
+      background: white;
+      width: 580px;
+      max-width: 92%;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+    }
+
+    .modal-card h3 { margin-top: 0; color: var(--excel-green); }
+
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #555; }
+    .form-group input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+
+    .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    .btn-confirm { background: var(--excel-green); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+    .btn-cancel { background: #e0e0e0; color: #333; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -218,6 +267,8 @@
   </header>
 
   <div class="toolbar">
+    <button class="btn-add-drive" onclick="scanDriveFolder()">📁 Scan Drive & Add Rows</button>
+
     <div class="search-box-wrapper">
       <input type="text" id="searchInput" placeholder="🔍 Type at least 2 characters to search all sheets..." oninput="debouncedSearch()" autocomplete="off" />
       <div class="search-dropdown" id="searchDropdown"></div>
@@ -230,12 +281,154 @@
 
   <div class="tabs-bar" id="tabsBar"></div>
 
+  <!-- Drive Details Confirmation Modal -->
+  <div class="modal-overlay" id="driveModal">
+    <div class="modal-card">
+      <h3>📁 Drive Scanned - Confirm Details</h3>
+      <p style="font-size:13px; color:#666;">Confirm drive hardware info to insert subfolder entries into tab: <strong id="modalSheetName"></strong></p>
+      
+      <div class="form-group">
+        <label>PROJ NAME (Drive Label)</label>
+        <input type="text" id="modalProjName" readonly style="background:#f0f0f0;" />
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <div class="form-group" style="flex:1;">
+          <label>TOTAL DRIVE SIZE</label>
+          <input type="text" id="modalDriveSize" value="4TB" placeholder="e.g. 4TB" />
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label>SPACE REMAINING</label>
+          <input type="text" id="modalSpaceRemaining" placeholder="e.g. 2.53TB" />
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label>SERIAL NUMBER (S/N)</label>
+          <input type="text" id="modalSN" placeholder="e.g. WX32D63E71Z0" />
+        </div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label style="font-size:12px; font-weight:600; color:#555;">Detected Subfolders to Add:</label>
+        <div id="folderListPreview" style="max-height:120px; overflow-y:auto; background:#f9f9f9; padding:8px; border:1px solid #ddd; font-size:12px; margin-top:4px;"></div>
+      </div>
+
+      <div class="modal-buttons">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-confirm" onclick="confirmInsertRows()">Insert Items to Sheet</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbyyNSISfsoH6LoL9u5FYFZvnwt5WyCvkwDmwlPRJpN9jMAHA2t6VdWQ-cfokxNZ-CdR/exec";
 
     let globalSheetData = {};
     let activeSheetName = "";
     let searchTimeout = null;
+    let scannedFolderData = [];
+
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + sizes[i];
+    }
+
+    // 1. Open File Picker and scan subfolder names + sizes
+    async function scanDriveFolder() {
+      if (!('showDirectoryPicker' in window)) {
+        return alert("Your browser doesn't support directory picking. Please use Google Chrome or Microsoft Edge.");
+      }
+
+      try {
+        const dirHandle = await window.showDirectoryPicker();
+        const driveName = dirHandle.name;
+        scannedFolderData = [];
+
+        // Scan folders inside chosen drive
+        for await (const entry of dirHandle.values()) {
+          if (entry.kind === 'directory') {
+            let totalBytes = 0;
+            
+            // Calculate size of files inside this subfolder
+            for await (const fileEntry of entry.values()) {
+              if (fileEntry.kind === 'file') {
+                const file = await fileEntry.getFile();
+                totalBytes += file.size;
+              }
+            }
+
+            scannedFolderData.push({
+              folderName: entry.name,
+              fileSize: formatBytes(totalBytes)
+            });
+          }
+        }
+
+        if (scannedFolderData.length === 0) {
+          scannedFolderData.push({ folderName: "ROOT", fileSize: "0 B" });
+        }
+
+        // Populate Modal Fields
+        document.getElementById("modalProjName").value = driveName;
+        document.getElementById("modalSheetName").textContent = activeSheetName;
+        
+        const previewList = document.getElementById("folderListPreview");
+        previewList.innerHTML = scannedFolderData.map(f => `<div>📁 <strong>${f.folderName}</strong> (${f.fileSize})</div>`).join('');
+
+        document.getElementById("driveModal").style.display = "flex";
+
+      } catch (err) {
+        if (err.name !== 'AbortError') console.error("Scanner error:", err);
+      }
+    }
+
+    function closeModal() {
+      document.getElementById("driveModal").style.display = "none";
+    }
+
+    // 2. Confirm modal and send array of new rows to Google Apps Script
+    async function confirmInsertRows() {
+      const projName = document.getElementById("modalProjName").value;
+      const driveSize = document.getElementById("modalDriveSize").value || "";
+      const spaceRemaining = document.getElementById("modalSpaceRemaining").value || "";
+      const sn = document.getElementById("modalSN").value || "";
+
+      // Final prompt check as requested
+      const confirmAction = confirm(`Are you sure you want to add these ${scannedFolderData.length} items to the active database sheet "${activeSheetName}"?`);
+      if (!confirmAction) return;
+
+      // Construct rows matching sheet order: [NUMBER, SIZE, PROJ NAME, PROJ FOLDER, FILE SIZE, SPACE REMAINING, S/N]
+      const newRows = scannedFolderData.map(item => [
+        "", // NUMBER (Blank or manual)
+        driveSize,
+        projName,
+        item.folderName,
+        item.fileSize,
+        spaceRemaining,
+        sn
+      ]);
+
+      closeModal();
+
+      try {
+        await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "addMultipleRows",
+            sheetName: activeSheetName,
+            rows: newRows
+          })
+        });
+
+        alert("Items added successfully!");
+        loadAllSheets(); // Refresh grid view
+      } catch (err) {
+        alert("Failed to insert rows: " + err);
+      }
+    }
 
     function getColumnLetter(colIndex) {
       let letter = "";
@@ -327,18 +520,15 @@
       }
     }
 
-    // Debounce wrapper to stop browser freeze on fast typing
     function debouncedSearch() {
       clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(globalSearch, 300); // Waits 300ms after you stop typing
+      searchTimeout = setTimeout(globalSearch, 300);
     }
 
-    // Fast, non-blocking Global Search
     function globalSearch() {
       const query = document.getElementById("searchInput").value.toLowerCase().trim();
       const dropdown = document.getElementById("searchDropdown");
 
-      // Don't search for 1 character or empty strings (prevents crash)
       if (!query || query.length < 2) {
         dropdown.style.display = "none";
         dropdown.innerHTML = "";
@@ -346,20 +536,18 @@
       }
 
       let matches = [];
-      const MAX_RESULTS = 15; // Cap results at 15 to keep browser silky smooth
+      const MAX_RESULTS = 15;
 
-      // Search across sheets with early exit loop
       sheetLoop: for (const [sheetName, rows] of Object.entries(globalSheetData)) {
         for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
           const row = rows[rowIndex];
           
-          // Fast check if any cell in row contains query
           const rowText = row.join(" ").toLowerCase();
           if (rowText.includes(query)) {
             const previewText = row.filter(cell => cell !== "" && cell !== null).join(" | ");
             matches.push({ sheetName, rowIndex, previewText });
 
-            if (matches.length >= MAX_RESULTS) break sheetLoop; // Stop searching once 15 matches found
+            if (matches.length >= MAX_RESULTS) break sheetLoop;
           }
         }
       }
