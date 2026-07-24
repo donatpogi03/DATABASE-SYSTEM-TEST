@@ -60,7 +60,7 @@
       cursor: pointer;
       font-weight: 600;
       font-size: 13px;
-      display: flex;
+      display: none; /* Hidden by default; visible only on 2024-2025 tab */
       align-items: center;
       gap: 6px;
     }
@@ -134,7 +134,7 @@
     /* Scrollable Table Container */
     .table-container {
       flex: 1;
-      overflow: auto; /* Fully scrollable grid */
+      overflow: auto;
       background: white;
       margin: 10px 15px 45px 15px;
       border: 1px solid var(--excel-border);
@@ -267,7 +267,7 @@
     .btn-confirm { background: var(--excel-green); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
     .btn-cancel { background: #e0e0e0; color: #333; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
 
-    /* Floating Loading Overlay (Does NOT block scrolling) */
+    /* Floating Loading Overlay */
     .loading-overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -277,7 +277,7 @@
       align-items: center;
       justify-content: center;
       z-index: 900;
-      display: none; /* Hidden by default */
+      display: none;
     }
 
     .spinner {
@@ -315,6 +315,7 @@
   </header>
 
   <div class="toolbar">
+    <!-- Button hidden by default, toggled via switchSheet() -->
     <button class="btn-add-drive" id="btnScanDrive" onclick="scanDriveFolder()">📁 Scan Drive & Add Rows</button>
 
     <div class="search-box-wrapper">
@@ -342,7 +343,7 @@
         </div>
         <div class="form-group" style="flex:2;">
           <label>PROJ NAME (Drive Label)</label>
-          <input type="text" id="modalProjName" placeholder="PROJECT NAME" />
+          <input type="text" id="modalProjName" placeholder="e.g. STORYTIME_2" />
         </div>
       </div>
 
@@ -624,6 +625,14 @@
     function switchSheet(sheetName, newRowStartIndex = null, newRowCount = 0) {
       activeSheetName = sheetName;
       renderTabs(Object.keys(globalSheetData));
+
+      // TAB VISIBILITY CONTROL: Only show Scan Drive button on "2024-2025" sheet
+      const scanBtn = document.getElementById("btnScanDrive");
+      if (sheetName.trim() === "2024-2025") {
+        scanBtn.style.display = "flex";
+      } else {
+        scanBtn.style.display = "none";
+      }
 
       const gridData = globalSheetData[sheetName] || [];
       const table = document.getElementById("excelTable");
