@@ -315,7 +315,6 @@
   </header>
 
   <div class="toolbar">
-    <!-- Button hidden by default, toggled via switchSheet() -->
     <button class="btn-add-drive" id="btnScanDrive" onclick="scanDriveFolder()">📁 Scan Drive & Add Rows</button>
 
     <div class="search-box-wrapper">
@@ -472,10 +471,13 @@
         
         showLoading("Scanning drive folders & calculating sizes...");
 
-        let driveName = dirHandle.name;
-        if (!driveName || driveName === "\\" || driveName === "/") {
-          driveName = "";
-        }
+        let rawDriveName = dirHandle.name || "";
+        
+        // Clean folder/drive name: Remove drive suffixes like " (F:)", " (E:)" or root slashes
+        let cleanedProjName = rawDriveName
+          .replace(/\s*\([A-Z]:\)/i, '') // Strip "(F:)"
+          .replace(/[\/\\]/g, '')        // Strip "/" or "\"
+          .trim();
 
         scannedFolderData = [];
         totalScannedBytes = 0;
@@ -508,7 +510,8 @@
         const nextBatchNum = getNextBatchNumber();
         document.getElementById("modalBatchNumber").value = nextBatchNum;
 
-        document.getElementById("modalProjName").value = driveName;
+        // Auto-insert folder/drive name into PROJ NAME
+        document.getElementById("modalProjName").value = cleanedProjName;
         document.getElementById("modalSheetName").textContent = activeSheetName;
         
         calculateSpaceRemaining();
