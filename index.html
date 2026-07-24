@@ -328,15 +328,20 @@
     let scannedFolderData = [];
     let totalScannedBytes = 0;
 
+    // Matches Windows Folder Properties math (1000^4 = 1 TB)
     function formatBytes(bytes) {
       if (bytes === 0) return '0 B';
-      const k = 1024;
+      const k = 1000;
       const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+      
+      let i = Math.floor(Math.log(bytes) / Math.log(k));
+      if (i > 4) i = 4;
+
+      let val = bytes / Math.pow(k, i);
+
+      return parseFloat(val.toFixed(2)) + " " + sizes[i];
     }
 
-    // Helper to recursively sum up total size of all files inside subdirectories
     async function getFolderSizeRecursive(dirHandle) {
       let bytes = 0;
       try {
@@ -354,15 +359,14 @@
       return bytes;
     }
 
-    // Calculates SPACE REMAINING from Total Drive Size minus Total Scanned Bytes
     function calculateSpaceRemaining() {
       const driveSizeStr = document.getElementById("modalDriveSize").value.trim().toUpperCase();
       let totalDriveBytes = 0;
 
       if (driveSizeStr.endsWith("TB")) {
-        totalDriveBytes = parseFloat(driveSizeStr) * 1024 * 1024 * 1024 * 1024;
+        totalDriveBytes = parseFloat(driveSizeStr) * 1000 * 1000 * 1000 * 1000;
       } else if (driveSizeStr.endsWith("GB")) {
-        totalDriveBytes = parseFloat(driveSizeStr) * 1024 * 1024 * 1024;
+        totalDriveBytes = parseFloat(driveSizeStr) * 1000 * 1000 * 1000;
       }
 
       if (totalDriveBytes > 0 && totalDriveBytes >= totalScannedBytes) {
@@ -371,7 +375,6 @@
       }
     }
 
-    // 1. Open Directory Picker and scan top-level user folders recursively
     async function scanDriveFolder() {
       if (!('showDirectoryPicker' in window)) {
         return alert("Your browser doesn't support directory picking. Please use Google Chrome or Microsoft Edge.");
@@ -410,14 +413,11 @@
           return;
         }
 
-        // Populate Modal Fields
         document.getElementById("modalProjName").value = driveName;
         document.getElementById("modalSheetName").textContent = activeSheetName;
         
-        // Auto-calculate remaining space based on Total Drive Size input
         calculateSpaceRemaining();
 
-        // Render preview list
         const previewList = document.getElementById("folderListPreview");
         previewList.innerHTML = scannedFolderData.map(f => `<div>📁 <strong>${f.folderName}</strong> (${f.fileSize})</div>`).join('');
 
@@ -432,7 +432,6 @@
       document.getElementById("driveModal").style.display = "none";
     }
 
-    // 2. Confirm modal and send array of new rows to Google Apps Script
     async function confirmInsertRows() {
       const projName = document.getElementById("modalProjName").value.trim();
       const driveSize = document.getElementById("modalDriveSize").value.trim();
@@ -446,9 +445,8 @@
       const confirmAction = confirm(`Are you sure you want to add these ${scannedFolderData.length} items to database tab "${activeSheetName}"?`);
       if (!confirmAction) return;
 
-      // Construct rows matching sheet order: [NUMBER, SIZE, PROJ NAME, PROJ FOLDER, FILE SIZE, SPACE REMAINING, S/N]
       const newRows = scannedFolderData.map(item => [
-        "", // NUMBER (Blank for manual entry)
+        "", // NUMBER
         driveSize,
         projName,
         item.folderName,
