@@ -138,6 +138,7 @@
       background: white;
       margin: 10px 15px 45px 15px;
       border: 1px solid var(--excel-border);
+      position: relative;
     }
 
     /* Excel Grid Styling */
@@ -154,18 +155,15 @@
       white-space: nowrap;
     }
 
-    /* Active cell focus indicator */
     table.excel-grid td[contenteditable="true"]:focus {
       outline: 2px solid var(--excel-green) !important;
       background-color: #ffffff;
     }
 
-    /* Target row highlight */
     tr.highlight-target {
       background-color: #fffde7 !important;
     }
 
-    /* Saving feedback states */
     td.saving { background-color: #fff9c4 !important; }
     td.saved { background-color: #e8f5e9 !important; }
 
@@ -258,6 +256,39 @@
     .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
     .btn-confirm { background: var(--excel-green); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
     .btn-cancel { background: #e0e0e0; color: #333; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+
+    /* Loading Overlay & Spinner Effects */
+    .loading-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255, 255, 255, 0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e0e0e0;
+      border-top: 4px solid var(--excel-green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .loading-text {
+      margin-top: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--excel-green);
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -267,7 +298,7 @@
   </header>
 
   <div class="toolbar">
-    <button class="btn-add-drive" onclick="scanDriveFolder()">📁 Scan Drive & Add Rows</button>
+    <button class="btn-add-drive" id="btnScanDrive" onclick="scanDriveFolder()">📁 Scan Drive & Add Rows</button>
 
     <div class="search-box-wrapper">
       <input type="text" id="searchInput" placeholder="🔍 Type at least 2 characters to search all sheets..." oninput="debouncedSearch()" autocomplete="off" />
@@ -276,6 +307,12 @@
   </div>
 
   <div class="table-container" id="tableContainer">
+    <!-- Main Loading Spinner -->
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loadingText">Loading Spreadsheet Data...</div>
+    </div>
+
     <table class="excel-grid" id="excelTable"></table>
   </div>
 
@@ -320,7 +357,7 @@
 
       <div class="modal-buttons">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-        <button class="btn-confirm" onclick="confirmInsertRows()">Insert Items to Sheet</button>
+        <button class="btn-confirm" id="btnConfirmInsert" onclick="confirmInsertRows()">Insert Items to Sheet</button>
       </div>
     </div>
   </div>
@@ -334,7 +371,16 @@
     let scannedFolderData = [];
     let totalScannedBytes = 0;
 
-    // Formats size bytes to match Windows Folder Properties 1:1 using base-1000 math
+    function showLoading(msg = "Loading Spreadsheet Data...") {
+      document.getElementById("loadingText").textContent = msg;
+      document.getElementById("loadingOverlay").style.display = "flex";
+    }
+
+    function hideLoading() {
+      document.getElementById("loadingOverlay").style.display = "none";
+    }
+
+    // Matches Windows Folder Properties math (1000^4 = 1 TB)
     function formatBytes(bytes) {
       if (bytes === 0) return '0 B';
       const k = 1000;
@@ -348,7 +394,6 @@
       return parseFloat(val.toFixed(2)) + " " + sizes[i];
     }
 
-    // Auto-generates the next sequential batch NUMBER (e.g. 2026-025)
     function getNextBatchNumber() {
       const currentYear = new Date().getFullYear();
       const sheetRows = globalSheetData[activeSheetName] || [];
@@ -356,7 +401,7 @@
       let maxSeq = 0;
       
       sheetRows.forEach(row => {
-        const val = String(row[0] || "").trim(); // Column A (NUMBER)
+        const val = String(row[0] || "").trim();
         if (val) {
           const parts = val.split('-');
           if (parts.length === 2) {
@@ -413,6 +458,9 @@
 
       try {
         const dirHandle = await window.showDirectoryPicker();
+        
+        showLoading("Scanning drive folders & calculating sizes...");
+
         let driveName = dirHandle.name;
         if (!driveName || driveName === "\\" || driveName === "/") {
           driveName = "";
@@ -439,12 +487,13 @@
           }
         }
 
+        hideLoading();
+
         if (scannedFolderData.length === 0) {
           alert("No visible subfolders found in the selected drive!");
           return;
         }
 
-        // Auto-generate the batch number (e.g. 2026-025)
         const nextBatchNum = getNextBatchNumber();
         document.getElementById("modalBatchNumber").value = nextBatchNum;
 
@@ -459,6 +508,7 @@
         document.getElementById("driveModal").style.display = "flex";
 
       } catch (err) {
+        hideLoading();
         if (err.name !== 'AbortError') console.error("Scanner error:", err);
       }
     }
@@ -481,9 +531,8 @@
       const confirmAction = confirm(`Are you sure you want to add these ${scannedFolderData.length} items (Batch ${batchNumber}) to database tab "${activeSheetName}"?`);
       if (!confirmAction) return;
 
-      // Automatically inserts batch number into Column A (NUMBER)
       const newRows = scannedFolderData.map(item => [
-        batchNumber, // Auto-generated NUMBER (e.g. 2026-025)
+        batchNumber,
         driveSize,
         projName,
         item.folderName,
@@ -493,6 +542,7 @@
       ]);
 
       closeModal();
+      showLoading(`Saving Batch ${batchNumber} to Google Sheets...`);
 
       try {
         await fetch(API_URL, {
@@ -505,9 +555,11 @@
           })
         });
 
+        hideLoading();
         alert(`Batch ${batchNumber} added successfully!`);
         loadAllSheets();
       } catch (err) {
+        hideLoading();
         alert("Failed to insert rows: " + err);
       }
     }
@@ -522,6 +574,7 @@
     }
 
     async function loadAllSheets() {
+      showLoading("Loading Spreadsheet Data...");
       try {
         const res = await fetch(API_URL);
         const json = await res.json();
@@ -537,6 +590,8 @@
         }
       } catch (err) {
         console.error("Failed to load spreadsheet:", err);
+      } finally {
+        hideLoading();
       }
     }
 
