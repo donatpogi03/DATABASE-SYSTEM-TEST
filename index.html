@@ -164,6 +164,17 @@
       background-color: #fffde7 !important;
     }
 
+    /* Flash highlight for real-time newly inserted rows */
+    tr.newly-added-row {
+      background-color: #e8f5e9 !important;
+      animation: flashGreen 2.5s ease-out;
+    }
+
+    @keyframes flashGreen {
+      0% { background-color: #a5d6a7; }
+      100% { background-color: #ffffff; }
+    }
+
     td.saving { background-color: #fff9c4 !important; }
     td.saved { background-color: #e8f5e9 !important; }
 
@@ -380,7 +391,6 @@
       document.getElementById("loadingOverlay").style.display = "none";
     }
 
-    // Matches Windows Folder Properties math (1000^4 = 1 TB)
     function formatBytes(bytes) {
       if (bytes === 0) return '0 B';
       const k = 1000;
@@ -517,6 +527,7 @@
       document.getElementById("driveModal").style.display = "none";
     }
 
+    // REAL-TIME INSERTION FUNCTION
     async function confirmInsertRows() {
       const batchNumber = document.getElementById("modalBatchNumber").value.trim();
       const projName = document.getElementById("modalProjName").value.trim();
@@ -542,10 +553,21 @@
       ]);
 
       closeModal();
-      showLoading(`Saving Batch ${batchNumber} to Google Sheets...`);
 
+      // 1. REAL-TIME UPDATE: Append to local memory immediately
+      if (!globalSheetData[activeSheetName]) {
+        globalSheetData[activeSheetName] = [];
+      }
+      
+      const startIndex = globalSheetData[activeSheetName].length;
+      globalSheetData[activeSheetName].push(...newRows);
+
+      // 2. REAL-TIME RENDER: Instantly render table & scroll to new rows with green flash
+      switchSheet(activeSheetName, startIndex, newRows.length);
+
+      // 3. BACKGROUND SYNC: Send to Google Sheets API without blocking the screen
       try {
-        await fetch(API_URL, {
+        fetch(API_URL, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({
@@ -554,13 +576,8 @@
             rows: newRows
           })
         });
-
-        hideLoading();
-        alert(`Batch ${batchNumber} added successfully!`);
-        loadAllSheets();
       } catch (err) {
-        hideLoading();
-        alert("Failed to insert rows: " + err);
+        console.error("Background sync error:", err);
       }
     }
 
@@ -608,7 +625,7 @@
       });
     }
 
-    function switchSheet(sheetName, targetRowIndex = null) {
+    function switchSheet(sheetName, newRowStartIndex = null, newRowCount = 0) {
       activeSheetName = sheetName;
       renderTabs(Object.keys(globalSheetData));
 
@@ -630,8 +647,10 @@
 
       let bodyHTML = "<tbody>";
       gridData.forEach((row, rowIndex) => {
-        const isTarget = targetRowIndex === rowIndex ? "highlight-target" : "";
-        bodyHTML += `<tr id="row-${rowIndex}" class="${isTarget}"><td class="row-index">${rowIndex + 1}</td>`;
+        const isNewlyAdded = (newRowStartIndex !== null && rowIndex >= newRowStartIndex && rowIndex < newRowStartIndex + newRowCount);
+        const rowClass = isNewlyAdded ? "newly-added-row" : "";
+
+        bodyHTML += `<tr id="row-${rowIndex}" class="${rowClass}"><td class="row-index">${rowIndex + 1}</td>`;
         for (let colIndex = 0; colIndex < maxCols; colIndex++) {
           const cellValue = row[colIndex] !== undefined ? row[colIndex] : "";
           
@@ -647,13 +666,14 @@
 
       table.innerHTML = headerHTML + bodyHTML;
 
-      if (targetRowIndex !== null) {
+      // Real-time smooth scroll to bottom row when newly added
+      if (newRowStartIndex !== null) {
         setTimeout(() => {
-          const rowElem = document.getElementById(`row-${targetRowIndex}`);
+          const rowElem = document.getElementById(`row-${newRowStartIndex}`);
           if (rowElem) {
             rowElem.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
-        }, 100);
+        }, 80);
       }
     }
 
