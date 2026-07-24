@@ -287,9 +287,15 @@
       <h3>📁 Drive Scanned - Confirm Details</h3>
       <p style="font-size:13px; color:#666;">Confirm drive hardware info to insert subfolder entries into tab: <strong id="modalSheetName"></strong></p>
       
-      <div class="form-group">
-        <label>PROJ NAME (Drive Label)</label>
-        <input type="text" id="modalProjName" placeholder="e.g. STORYTIME_2" />
+      <div style="display:flex; gap:10px;">
+        <div class="form-group" style="flex:1;">
+          <label>BATCH NUMBER (Auto-assigned)</label>
+          <input type="text" id="modalBatchNumber" readonly style="background:#f0f0f0; font-weight:bold; color:var(--excel-green);" />
+        </div>
+        <div class="form-group" style="flex:2;">
+          <label>PROJ NAME (Drive Label)</label>
+          <input type="text" id="modalProjName" placeholder="e.g. STORYTIME_2" />
+        </div>
       </div>
 
       <div style="display:flex; gap:10px;">
@@ -328,7 +334,7 @@
     let scannedFolderData = [];
     let totalScannedBytes = 0;
 
-    // Matches Windows Folder Properties math (1000^4 = 1 TB)
+    // Formats size bytes to match Windows Folder Properties 1:1 using base-1000 math
     function formatBytes(bytes) {
       if (bytes === 0) return '0 B';
       const k = 1000;
@@ -340,6 +346,31 @@
       let val = bytes / Math.pow(k, i);
 
       return parseFloat(val.toFixed(2)) + " " + sizes[i];
+    }
+
+    // Auto-generates the next sequential batch NUMBER (e.g. 2026-025)
+    function getNextBatchNumber() {
+      const currentYear = new Date().getFullYear();
+      const sheetRows = globalSheetData[activeSheetName] || [];
+      
+      let maxSeq = 0;
+      
+      sheetRows.forEach(row => {
+        const val = String(row[0] || "").trim(); // Column A (NUMBER)
+        if (val) {
+          const parts = val.split('-');
+          if (parts.length === 2) {
+            const year = parseInt(parts[0], 10);
+            const seq = parseInt(parts[1], 10);
+            if (year === currentYear && !isNaN(seq)) {
+              if (seq > maxSeq) maxSeq = seq;
+            }
+          }
+        }
+      });
+
+      const nextSeq = String(maxSeq + 1).padStart(3, '0');
+      return `${currentYear}-${nextSeq}`;
     }
 
     async function getFolderSizeRecursive(dirHandle) {
@@ -413,6 +444,10 @@
           return;
         }
 
+        // Auto-generate the batch number (e.g. 2026-025)
+        const nextBatchNum = getNextBatchNumber();
+        document.getElementById("modalBatchNumber").value = nextBatchNum;
+
         document.getElementById("modalProjName").value = driveName;
         document.getElementById("modalSheetName").textContent = activeSheetName;
         
@@ -433,6 +468,7 @@
     }
 
     async function confirmInsertRows() {
+      const batchNumber = document.getElementById("modalBatchNumber").value.trim();
       const projName = document.getElementById("modalProjName").value.trim();
       const driveSize = document.getElementById("modalDriveSize").value.trim();
       const spaceRemaining = document.getElementById("modalSpaceRemaining").value.trim();
@@ -442,11 +478,12 @@
         return alert("Please enter a PROJ NAME (Drive Label)!");
       }
 
-      const confirmAction = confirm(`Are you sure you want to add these ${scannedFolderData.length} items to database tab "${activeSheetName}"?`);
+      const confirmAction = confirm(`Are you sure you want to add these ${scannedFolderData.length} items (Batch ${batchNumber}) to database tab "${activeSheetName}"?`);
       if (!confirmAction) return;
 
+      // Automatically inserts batch number into Column A (NUMBER)
       const newRows = scannedFolderData.map(item => [
-        "", // NUMBER
+        batchNumber, // Auto-generated NUMBER (e.g. 2026-025)
         driveSize,
         projName,
         item.folderName,
@@ -468,7 +505,7 @@
           })
         });
 
-        alert("Items added successfully!");
+        alert(`Batch ${batchNumber} added successfully!`);
         loadAllSheets();
       } catch (err) {
         alert("Failed to insert rows: " + err);
