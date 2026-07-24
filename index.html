@@ -308,7 +308,7 @@
       </div>
 
       <div style="margin-top:10px;">
-        <label style="font-size:12px; font-weight:600; color:#555;">Detected Subfolders to Add:</label>
+        <label style="font-size:12px; font-weight:600; color:#555;">Detected Folders to Add:</label>
         <div id="folderListPreview" style="max-height:120px; overflow-y:auto; background:#f9f9f9; padding:8px; border:1px solid #ddd; font-size:12px; margin-top:4px;"></div>
       </div>
 
@@ -335,7 +335,7 @@
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + sizes[i];
     }
 
-    // 1. Open File Picker and scan subfolder names + sizes
+    // 1. Open File Picker and scan ONLY visible top-level user folders
     async function scanDriveFolder() {
       if (!('showDirectoryPicker' in window)) {
         return alert("Your browser doesn't support directory picking. Please use Google Chrome or Microsoft Edge.");
@@ -346,17 +346,27 @@
         const driveName = dirHandle.name;
         scannedFolderData = [];
 
-        // Scan folders inside chosen drive
+        // Scan ONLY top-level user directories inside chosen drive
         for await (const entry of dirHandle.values()) {
-          if (entry.kind === 'directory') {
+          // Ignore hidden system folders (starting with '.', '$', or system volume)
+          const isSystemFolder = entry.name.startsWith('.') || 
+                                 entry.name.startsWith('$') || 
+                                 entry.name === 'System Volume Information' ||
+                                 entry.name === 'FOUND.000';
+
+          if (entry.kind === 'directory' && !isSystemFolder) {
             let totalBytes = 0;
             
-            // Calculate size of files inside this subfolder
-            for await (const fileEntry of entry.values()) {
-              if (fileEntry.kind === 'file') {
-                const file = await fileEntry.getFile();
-                totalBytes += file.size;
+            // Calculate size of files inside this specific subfolder
+            try {
+              for await (const fileEntry of entry.values()) {
+                if (fileEntry.kind === 'file') {
+                  const file = await fileEntry.getFile();
+                  totalBytes += file.size;
+                }
               }
+            } catch (e) {
+              console.warn("Could not read folder contents:", entry.name);
             }
 
             scannedFolderData.push({
@@ -367,13 +377,15 @@
         }
 
         if (scannedFolderData.length === 0) {
-          scannedFolderData.push({ folderName: "ROOT", fileSize: "0 B" });
+          alert("No visible subfolders found in the selected drive!");
+          return;
         }
 
         // Populate Modal Fields
         document.getElementById("modalProjName").value = driveName;
         document.getElementById("modalSheetName").textContent = activeSheetName;
         
+        // Render clean folder list preview
         const previewList = document.getElementById("folderListPreview");
         previewList.innerHTML = scannedFolderData.map(f => `<div>📁 <strong>${f.folderName}</strong> (${f.fileSize})</div>`).join('');
 
@@ -395,7 +407,7 @@
       const spaceRemaining = document.getElementById("modalSpaceRemaining").value || "";
       const sn = document.getElementById("modalSN").value || "";
 
-      // Final prompt check as requested
+      // Final confirmation prompt check
       const confirmAction = confirm(`Are you sure you want to add these ${scannedFolderData.length} items to the active database sheet "${activeSheetName}"?`);
       if (!confirmAction) return;
 
