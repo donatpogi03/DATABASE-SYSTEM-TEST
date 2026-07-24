@@ -289,17 +289,17 @@
       
       <div class="form-group">
         <label>PROJ NAME (Drive Label)</label>
-        <input type="text" id="modalProjName" readonly style="background:#f0f0f0;" />
+        <input type="text" id="modalProjName" placeholder="e.g. STORYTIME_2" />
       </div>
 
       <div style="display:flex; gap:10px;">
         <div class="form-group" style="flex:1;">
           <label>TOTAL DRIVE SIZE</label>
-          <input type="text" id="modalDriveSize" value="4TB" placeholder="e.g. 4TB" />
+          <input type="text" id="modalDriveSize" value="4TB" oninput="calculateSpaceRemaining()" placeholder="e.g. 4TB" />
         </div>
         <div class="form-group" style="flex:1;">
-          <label>SPACE REMAINING</label>
-          <input type="text" id="modalSpaceRemaining" placeholder="e.g. 2.53TB" />
+          <label>SPACE REMAINING (Auto-calculated)</label>
+          <input type="text" id="modalSpaceRemaining" placeholder="Calculated automatically..." />
         </div>
         <div class="form-group" style="flex:1;">
           <label>SERIAL NUMBER (S/N)</label>
@@ -308,7 +308,7 @@
       </div>
 
       <div style="margin-top:10px;">
-        <label style="font-size:12px; font-weight:600; color:#555;">Detected Folders to Add:</label>
+        <label style="font-size:12px; font-weight:600; color:#555;">Detected Subfolders & Sizes:</label>
         <div id="folderListPreview" style="max-height:120px; overflow-y:auto; background:#f9f9f9; padding:8px; border:1px solid #ddd; font-size:12px; margin-top:4px;"></div>
       </div>
 
@@ -326,16 +326,52 @@
     let activeSheetName = "";
     let searchTimeout = null;
     let scannedFolderData = [];
+    let totalScannedBytes = 0;
 
     function formatBytes(bytes) {
       if (bytes === 0) return '0 B';
       const k = 1024;
       const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + sizes[i];
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
 
-    // 1. Open File Picker and scan ONLY visible top-level user folders
+    // Helper to recursively sum up total size of all files inside subdirectories
+    async function getFolderSizeRecursive(dirHandle) {
+      let bytes = 0;
+      try {
+        for await (const entry of dirHandle.values()) {
+          if (entry.kind === 'file') {
+            const file = await entry.getFile();
+            bytes += file.size;
+          } else if (entry.kind === 'directory') {
+            bytes += await getFolderSizeRecursive(entry);
+          }
+        }
+      } catch (e) {
+        console.warn("Could not read folder handle:", e);
+      }
+      return bytes;
+    }
+
+    // Calculates SPACE REMAINING from Total Drive Size minus Total Scanned Bytes
+    function calculateSpaceRemaining() {
+      const driveSizeStr = document.getElementById("modalDriveSize").value.trim().toUpperCase();
+      let totalDriveBytes = 0;
+
+      if (driveSizeStr.endsWith("TB")) {
+        totalDriveBytes = parseFloat(driveSizeStr) * 1024 * 1024 * 1024 * 1024;
+      } else if (driveSizeStr.endsWith("GB")) {
+        totalDriveBytes = parseFloat(driveSizeStr) * 1024 * 1024 * 1024;
+      }
+
+      if (totalDriveBytes > 0 && totalDriveBytes >= totalScannedBytes) {
+        const remainingBytes = totalDriveBytes - totalScannedBytes;
+        document.getElementById("modalSpaceRemaining").value = formatBytes(remainingBytes);
+      }
+    }
+
+    // 1. Open Directory Picker and scan top-level user folders recursively
     async function scanDriveFolder() {
       if (!('showDirectoryPicker' in window)) {
         return alert("Your browser doesn't support directory picking. Please use Google Chrome or Microsoft Edge.");
@@ -343,35 +379,28 @@
 
       try {
         const dirHandle = await window.showDirectoryPicker();
-        const driveName = dirHandle.name;
-        scannedFolderData = [];
+        let driveName = dirHandle.name;
+        if (!driveName || driveName === "\\" || driveName === "/") {
+          driveName = "";
+        }
 
-        // Scan ONLY top-level user directories inside chosen drive
+        scannedFolderData = [];
+        totalScannedBytes = 0;
+
         for await (const entry of dirHandle.values()) {
-          // Ignore hidden system folders (starting with '.', '$', or system volume)
           const isSystemFolder = entry.name.startsWith('.') || 
                                  entry.name.startsWith('$') || 
                                  entry.name === 'System Volume Information' ||
                                  entry.name === 'FOUND.000';
 
           if (entry.kind === 'directory' && !isSystemFolder) {
-            let totalBytes = 0;
-            
-            // Calculate size of files inside this specific subfolder
-            try {
-              for await (const fileEntry of entry.values()) {
-                if (fileEntry.kind === 'file') {
-                  const file = await fileEntry.getFile();
-                  totalBytes += file.size;
-                }
-              }
-            } catch (e) {
-              console.warn("Could not read folder contents:", entry.name);
-            }
+            const folderBytes = await getFolderSizeRecursive(entry);
+            totalScannedBytes += folderBytes;
 
             scannedFolderData.push({
               folderName: entry.name,
-              fileSize: formatBytes(totalBytes)
+              bytes: folderBytes,
+              fileSize: formatBytes(folderBytes)
             });
           }
         }
@@ -385,7 +414,10 @@
         document.getElementById("modalProjName").value = driveName;
         document.getElementById("modalSheetName").textContent = activeSheetName;
         
-        // Render clean folder list preview
+        // Auto-calculate remaining space based on Total Drive Size input
+        calculateSpaceRemaining();
+
+        // Render preview list
         const previewList = document.getElementById("folderListPreview");
         previewList.innerHTML = scannedFolderData.map(f => `<div>📁 <strong>${f.folderName}</strong> (${f.fileSize})</div>`).join('');
 
@@ -402,18 +434,21 @@
 
     // 2. Confirm modal and send array of new rows to Google Apps Script
     async function confirmInsertRows() {
-      const projName = document.getElementById("modalProjName").value;
-      const driveSize = document.getElementById("modalDriveSize").value || "";
-      const spaceRemaining = document.getElementById("modalSpaceRemaining").value || "";
-      const sn = document.getElementById("modalSN").value || "";
+      const projName = document.getElementById("modalProjName").value.trim();
+      const driveSize = document.getElementById("modalDriveSize").value.trim();
+      const spaceRemaining = document.getElementById("modalSpaceRemaining").value.trim();
+      const sn = document.getElementById("modalSN").value.trim();
 
-      // Final confirmation prompt check
-      const confirmAction = confirm(`Are you sure you want to add these ${scannedFolderData.length} items to the active database sheet "${activeSheetName}"?`);
+      if (!projName) {
+        return alert("Please enter a PROJ NAME (Drive Label)!");
+      }
+
+      const confirmAction = confirm(`Are you sure you want to add these ${scannedFolderData.length} items to database tab "${activeSheetName}"?`);
       if (!confirmAction) return;
 
       // Construct rows matching sheet order: [NUMBER, SIZE, PROJ NAME, PROJ FOLDER, FILE SIZE, SPACE REMAINING, S/N]
       const newRows = scannedFolderData.map(item => [
-        "", // NUMBER (Blank or manual)
+        "", // NUMBER (Blank for manual entry)
         driveSize,
         projName,
         item.folderName,
@@ -436,7 +471,7 @@
         });
 
         alert("Items added successfully!");
-        loadAllSheets(); // Refresh grid view
+        loadAllSheets();
       } catch (err) {
         alert("Failed to insert rows: " + err);
       }
@@ -553,7 +588,6 @@
       sheetLoop: for (const [sheetName, rows] of Object.entries(globalSheetData)) {
         for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
           const row = rows[rowIndex];
-          
           const rowText = row.join(" ").toLowerCase();
           if (rowText.includes(query)) {
             const previewText = row.filter(cell => cell !== "" && cell !== null).join(" | ");
