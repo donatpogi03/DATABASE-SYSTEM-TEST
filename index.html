@@ -357,7 +357,8 @@
         </div>
         <div class="form-group" style="flex:1;">
           <label>SERIAL NUMBER (S/N)</label>
-          <input type="text" id="modalSN" placeholder="e.g. WX32D63E71Z0" />
+          <!-- Defaults to empty value -->
+          <input type="text" id="modalSN" placeholder="Enter S/N manually..." />
         </div>
       </div>
 
@@ -408,14 +409,12 @@
       return parseFloat(val.toFixed(2)) + " " + sizes[i];
     }
 
-    // FINDS THE LAST INSERTED BATCH AT THE BOTTOM OF THE SHEET AND INCREMENTS IT BY 1
     function getNextBatchNumber() {
       const sheetRows = globalSheetData[activeSheetName] || [];
       const isBackup = isBackupSheet();
       
       let lastBatchVal = "";
 
-      // Scan backwards from bottom to top to find the latest batch entry
       for (let i = sheetRows.length - 1; i >= 0; i--) {
         const val = String(sheetRows[i][0] || "").trim();
         if (val && val.match(/^(?:B)?\d{4}-\d+$/i)) {
@@ -424,13 +423,11 @@
         }
       }
 
-      // Default if sheet is completely empty
       if (!lastBatchVal) {
         const currentYear = new Date().getFullYear();
         return isBackup ? `B${currentYear}-001` : `${currentYear}-001`;
       }
 
-      // Parse and increment the bottom-most batch number
       const match = lastBatchVal.match(/^(B)?(\d{4})-(\d+)$/i);
       if (match) {
         const prefix = isBackup ? "B" : "";
@@ -533,11 +530,15 @@
           return;
         }
 
+        // Auto-detect next batch number
         const nextBatchNum = getNextBatchNumber();
         document.getElementById("modalBatchNumber").value = nextBatchNum;
         document.getElementById("modalProjName").value = cleanedProjName;
         document.getElementById("modalSheetName").textContent = activeSheetName;
         
+        // Reset S/N to ALWAYS BE EMPTY on scan
+        document.getElementById("modalSN").value = "";
+
         calculateSpaceRemaining();
 
         const previewList = document.getElementById("folderListPreview");
@@ -581,7 +582,7 @@
         isBackupSheet() ? projName : item.folderName,
         item.fileSize,
         spaceRemaining,
-        sn
+        sn // Will insert whatever is typed (or blank)
       ]);
 
       closeModal();
