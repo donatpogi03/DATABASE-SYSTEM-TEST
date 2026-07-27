@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Backup Drive Manager</title>
+  <title>Backup Drive Viewer</title>
   <style>
     :root {
       --excel-green: #107c41;
@@ -11,7 +11,12 @@
       --excel-border: #d4d4d4;
     }
     
-    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
 
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -20,6 +25,7 @@
       flex-direction: column;
     }
 
+    /* Header Bar */
     header {
       background-color: var(--excel-green);
       color: white;
@@ -33,6 +39,7 @@
 
     header h1 { margin: 0; font-size: 18px; font-weight: 600; }
 
+    /* Search Container & Dropdown Styling */
     .toolbar {
       background: #ffffff;
       padding: 10px 20px;
@@ -41,6 +48,7 @@
       gap: 12px;
       align-items: center;
       flex-shrink: 0;
+      position: relative;
     }
 
     .btn-add-drive {
@@ -52,13 +60,78 @@
       cursor: pointer;
       font-weight: 600;
       font-size: 13px;
-      display: flex;
+      display: none; /* Strictly hidden by default; visible ONLY on 2024-2025 BACKUP */
       align-items: center;
       gap: 6px;
     }
 
-    .btn-add-drive:hover { background-color: var(--excel-dark-green); }
+    .btn-add-drive:hover {
+      background-color: var(--excel-dark-green);
+    }
 
+    .search-box-wrapper {
+      position: relative;
+      width: 450px;
+    }
+
+    .search-box-wrapper input {
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+
+    /* Search Results Dropdown Menu */
+    .search-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid var(--excel-border);
+      border-radius: 0 0 6px 6px;
+      max-height: 280px;
+      overflow-y: auto;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 100;
+      display: none;
+    }
+
+    .dropdown-item {
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dropdown-item:hover {
+      background-color: #f0f7f3;
+    }
+
+    .dropdown-item .sheet-badge {
+      background: #e8f5e9;
+      color: var(--excel-green);
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .dropdown-item .match-text {
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Scrollable Table Container */
     .table-container {
       flex: 1;
       overflow: auto;
@@ -68,6 +141,7 @@
       position: relative;
     }
 
+    /* Excel Grid Styling */
     table.excel-grid {
       border-collapse: collapse;
       width: 100%;
@@ -81,37 +155,110 @@
       white-space: nowrap;
     }
 
+    table.excel-grid td[contenteditable="true"]:focus {
+      outline: 2px solid var(--excel-green) !important;
+      background-color: #ffffff;
+    }
+
+    tr.highlight-target {
+      background-color: #fffde7 !important;
+    }
+
+    tr.newly-added-row {
+      background-color: #e8f5e9 !important;
+      animation: flashGreen 2.5s ease-out;
+    }
+
+    @keyframes flashGreen {
+      0% { background-color: #a5d6a7; }
+      100% { background-color: #ffffff; }
+    }
+
+    td.saving { background-color: #fff9c4 !important; }
+    td.saved { background-color: #e8f5e9 !important; }
+
+    /* Sticky Headers */
     table.excel-grid th {
       background-color: #f8f9fa;
       color: #555;
       font-weight: 600;
-      position: sticky; top: 0; z-index: 2;
+      text-align: center;
+      user-select: none;
+      position: sticky;
+      top: 0;
+      z-index: 2;
     }
 
+    /* Row Numbers */
     table.excel-grid td.row-index {
       background-color: #f8f9fa;
       color: #777;
       text-align: center;
       font-weight: 600;
       width: 40px;
-      position: sticky; left: 0; z-index: 1;
+      position: sticky;
+      left: 0;
+      z-index: 1;
     }
 
-    /* Modal */
+    /* Bottom Sheet Tabs */
+    .tabs-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 35px;
+      background: #e6e6e6;
+      border-top: 1px solid var(--excel-border);
+      display: flex;
+      padding-left: 15px;
+      overflow-x: auto;
+      z-index: 10;
+    }
+
+    .tab-button {
+      padding: 6px 18px;
+      border: 1px solid var(--excel-border);
+      border-bottom: none;
+      background: #d9d9d9;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      margin-right: 2px;
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .tab-button.active {
+      background: white;
+      color: var(--excel-green);
+      border-top: 3px solid var(--excel-green);
+    }
+
+    /* Confirmation Modal */
     .modal-overlay {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
       background: rgba(0,0,0,0.5);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 1000; display: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      display: none;
     }
 
     .modal-card {
-      background: white; width: 580px; max-width: 92%;
-      border-radius: 8px; padding: 20px;
+      background: white;
+      width: 580px;
+      max-width: 92%;
+      border-radius: 8px;
+      padding: 20px;
       box-shadow: 0 10px 25px rgba(0,0,0,0.25);
     }
 
     .modal-card h3 { margin-top: 0; color: var(--excel-green); }
+
     .form-group { margin-bottom: 12px; }
     .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #555; }
     .form-group input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
@@ -120,28 +267,47 @@
     .btn-confirm { background: var(--excel-green); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
     .btn-cancel { background: #e0e0e0; color: #333; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; }
 
-    /* Loading Overlay */
+    /* Floating Loading Overlay */
     .loading-overlay {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(255, 255, 255, 0.85);
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      z-index: 900; display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255, 255, 255, 0.82);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 900;
+      display: none;
     }
 
     .spinner {
-      width: 42px; height: 42px;
-      border: 4px solid #e0e0e0; border-top: 4px solid var(--excel-green);
-      border-radius: 50%; animation: spin 0.8s linear infinite;
+      width: 42px;
+      height: 42px;
+      border: 4px solid #e0e0e0;
+      border-top: 4px solid var(--excel-green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
 
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .loading-text {
+      margin-top: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--excel-green);
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
 
+  <!-- Floating Loading Screen -->
   <div class="loading-overlay" id="loadingOverlay">
     <div class="spinner"></div>
-    <div class="loading-text" id="loadingText" style="margin-top:12px; font-weight:600; color:var(--excel-green);">Loading Backup Data...</div>
+    <div class="loading-text" id="loadingText">Loading Spreadsheet Data...</div>
   </div>
 
   <header>
@@ -149,23 +315,30 @@
   </header>
 
   <div class="toolbar">
-    <button class="btn-add-drive" onclick="scanBackupDrive()">📁 Scan Full Backup Drive & Add Row</button>
+    <button class="btn-add-drive" id="btnScanDrive" onclick="scanDriveFolder()">📁 Scan Full Backup Drive & Add Row</button>
+
+    <div class="search-box-wrapper">
+      <input type="text" id="searchInput" placeholder="🔍 Type at least 2 characters to search all sheets..." oninput="debouncedSearch()" autocomplete="off" />
+      <div class="search-dropdown" id="searchDropdown"></div>
+    </div>
   </div>
 
-  <div class="table-container">
+  <div class="table-container" id="tableContainer">
     <table class="excel-grid" id="excelTable"></table>
   </div>
 
-  <!-- Backup Confirmation Modal -->
+  <div class="tabs-bar" id="tabsBar"></div>
+
+  <!-- Backup Drive Details Confirmation Modal -->
   <div class="modal-overlay" id="driveModal">
     <div class="modal-card">
-      <h3>📁 Backup Drive Scanned</h3>
-      <p style="font-size:13px; color:#666;">Inserting single combined entry into <strong>2024-2025 BACKUP</strong> tab.</p>
+      <h3>📁 Backup Drive Scanned - Confirm Details</h3>
+      <p style="font-size:13px; color:#666;">Inserting single combined entry into tab: <strong id="modalSheetName"></strong></p>
       
       <div style="display:flex; gap:10px;">
         <div class="form-group" style="flex:1;">
           <label>BATCH NUMBER</label>
-          <input type="text" id="modalBatchNumber" style="font-weight:bold; color:var(--excel-green);" />
+          <input type="text" id="modalBatchNumber" style="font-weight:bold; color:var(--excel-green);" placeholder="e.g. B2026-001" />
         </div>
         <div class="form-group" style="flex:2;">
           <label>PROJ NAME & FOLDER</label>
@@ -176,11 +349,11 @@
       <div style="display:flex; gap:10px;">
         <div class="form-group" style="flex:1;">
           <label>TOTAL DRIVE SIZE</label>
-          <input type="text" id="modalDriveSize" value="4TB" oninput="calculateSpaceRemaining()" />
+          <input type="text" id="modalDriveSize" value="4TB" oninput="calculateSpaceRemaining()" placeholder="e.g. 4TB" />
         </div>
         <div class="form-group" style="flex:1;">
-          <label>SPACE REMAINING</label>
-          <input type="text" id="modalSpaceRemaining" placeholder="Calculated..." />
+          <label>SPACE REMAINING (Auto-calculated)</label>
+          <input type="text" id="modalSpaceRemaining" placeholder="Calculated automatically..." />
         </div>
         <div class="form-group" style="flex:1;">
           <label>SERIAL NUMBER (S/N)</label>
@@ -188,22 +361,28 @@
         </div>
       </div>
 
+      <div style="margin-top:10px;">
+        <label style="font-size:12px; font-weight:600; color:#555;">Full Backup Details:</label>
+        <div id="folderListPreview" style="max-height:120px; overflow-y:auto; background:#f9f9f9; padding:8px; border:1px solid #ddd; font-size:12px; margin-top:4px;"></div>
+      </div>
+
       <div class="modal-buttons">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-        <button class="btn-confirm" onclick="confirmInsertRows()">Insert to Sheet</button>
+        <button class="btn-confirm" id="btnConfirmInsert" onclick="confirmInsertRows()">Insert Item to Sheet</button>
       </div>
     </div>
   </div>
 
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbyyNSISfsoH6LoL9u5FYFZvnwt5WyCvkwDmwlPRJpN9jMAHA2t6VdWQ-cfokxNZ-CdR/exec";
-    const TARGET_TAB = "2024-2025 BACKUP";
 
-    let backupSheetData = [];
+    let globalSheetData = {};
+    let activeSheetName = "";
+    let searchTimeout = null;
     let totalScannedBytes = 0;
     let formattedSize = "0 B";
 
-    function showLoading(msg) {
+    function showLoading(msg = "Loading Spreadsheet Data...") {
       document.getElementById("loadingText").textContent = msg;
       document.getElementById("loadingOverlay").style.display = "flex";
     }
@@ -216,29 +395,39 @@
       if (bytes === 0) return '0 B';
       const k = 1000;
       const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      
       let i = Math.floor(Math.log(bytes) / Math.log(k));
       if (i > 4) i = 4;
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+
+      let val = bytes / Math.pow(k, i);
+
+      return parseFloat(val.toFixed(2)) + " " + sizes[i];
     }
 
     function getNextBackupBatchNumber() {
       const currentYear = new Date().getFullYear();
+      const sheetRows = globalSheetData[activeSheetName] || [];
       let maxSeq = 0;
       
-      backupSheetData.forEach(row => {
+      sheetRows.forEach(row => {
         let val = String(row[0] || "").trim();
-        if (val.startsWith("B")) val = val.substring(1);
-        const parts = val.split('-');
-        if (parts.length === 2) {
-          const year = parseInt(parts[0], 10);
-          const seq = parseInt(parts[1], 10);
-          if (year === currentYear && !isNaN(seq) && seq > maxSeq) {
-            maxSeq = seq;
+        if (val) {
+          if (val.startsWith("B")) {
+            val = val.substring(1);
+          }
+          const parts = val.split('-');
+          if (parts.length === 2) {
+            const year = parseInt(parts[0], 10);
+            const seq = parseInt(parts[1], 10);
+            if (year === currentYear && !isNaN(seq)) {
+              if (seq > maxSeq) maxSeq = seq;
+            }
           }
         }
       });
 
-      return `B${currentYear}-${String(maxSeq + 1).padStart(3, '0')}`;
+      const nextSeq = String(maxSeq + 1).padStart(3, '0');
+      return `B${currentYear}-${nextSeq}`;
     }
 
     async function getFolderSizeRecursive(dirHandle) {
@@ -252,7 +441,9 @@
             bytes += await getFolderSizeRecursive(entry);
           }
         }
-      } catch (e) { console.warn("Error reading:", e); }
+      } catch (e) {
+        console.warn("Could not read folder handle:", e);
+      }
       return bytes;
     }
 
@@ -260,90 +451,312 @@
       const driveSizeStr = document.getElementById("modalDriveSize").value.trim().toUpperCase();
       let totalDriveBytes = 0;
 
-      if (driveSizeStr.endsWith("TB")) totalDriveBytes = parseFloat(driveSizeStr) * 1000**4;
-      else if (driveSizeStr.endsWith("GB")) totalDriveBytes = parseFloat(driveSizeStr) * 1000**3;
+      if (driveSizeStr.endsWith("TB")) {
+        totalDriveBytes = parseFloat(driveSizeStr) * 1000 * 1000 * 1000 * 1000;
+      } else if (driveSizeStr.endsWith("GB")) {
+        totalDriveBytes = parseFloat(driveSizeStr) * 1000 * 1000 * 1000;
+      }
 
       if (totalDriveBytes > 0 && totalDriveBytes >= totalScannedBytes) {
-        document.getElementById("modalSpaceRemaining").value = formatBytes(totalDriveBytes - totalScannedBytes);
+        const remainingBytes = totalDriveBytes - totalScannedBytes;
+        document.getElementById("modalSpaceRemaining").value = formatBytes(remainingBytes);
       }
     }
 
-    async function scanBackupDrive() {
-      if (!('showDirectoryPicker' in window)) return alert("Use Google Chrome or Edge.");
+    async function scanDriveFolder() {
+      if (!('showDirectoryPicker' in window)) {
+        return alert("Your browser doesn't support directory picking. Please use Google Chrome or Microsoft Edge.");
+      }
 
       try {
         const dirHandle = await window.showDirectoryPicker();
-        showLoading("Calculating total backup drive size...");
+        
+        showLoading("Calculating full backup drive size...");
 
         let rawDriveName = dirHandle.name || "";
-        let cleanedProjName = rawDriveName.replace(/\s*\([A-Z]:\)/i, '').replace(/[\/\\]/g, '').trim();
+        let cleanedProjName = rawDriveName
+          .replace(/\s*\([A-Z]:\)/i, '') // Strip "(F:)"
+          .replace(/[\/\\]/g, '')        // Strip "/" or "\"
+          .trim();
 
+        // BACKUP MODE: Get total size of ENTIRE drive as 1 combined number
         totalScannedBytes = await getFolderSizeRecursive(dirHandle);
         formattedSize = formatBytes(totalScannedBytes);
 
         hideLoading();
 
-        document.getElementById("modalBatchNumber").value = getNextBackupBatchNumber();
+        const nextBatchNum = getNextBackupBatchNumber();
+        document.getElementById("modalBatchNumber").value = nextBatchNum;
         document.getElementById("modalProjName").value = cleanedProjName;
+        document.getElementById("modalSheetName").textContent = activeSheetName;
+        
         calculateSpaceRemaining();
 
+        const previewList = document.getElementById("folderListPreview");
+        previewList.innerHTML = `<div>📁 <strong>${cleanedProjName}</strong> (Full Backup) — Total Size: <strong>${formattedSize}</strong></div>`;
+
         document.getElementById("driveModal").style.display = "flex";
+
       } catch (err) {
         hideLoading();
+        if (err.name !== 'AbortError') console.error("Scanner error:", err);
       }
     }
 
-    function closeModal() { document.getElementById("driveModal").style.display = "none"; }
+    function closeModal() {
+      document.getElementById("driveModal").style.display = "none";
+    }
 
     async function confirmInsertRows() {
-      const batchNum = document.getElementById("modalBatchNumber").value.trim();
+      const batchNumber = document.getElementById("modalBatchNumber").value.trim();
       const projName = document.getElementById("modalProjName").value.trim();
       const driveSize = document.getElementById("modalDriveSize").value.trim();
       const spaceRemaining = document.getElementById("modalSpaceRemaining").value.trim();
       const sn = document.getElementById("modalSN").value.trim();
 
-      const newRow = [[batchNum, driveSize, projName, projName, formattedSize, spaceRemaining, sn]];
+      if (!batchNumber) return alert("Please enter a BATCH NUMBER!");
+      if (!projName) return alert("Please enter a PROJ NAME!");
+
+      const confirmAction = confirm(`Are you sure you want to add this backup entry (Batch ${batchNumber}) to tab "${activeSheetName}"?`);
+      if (!confirmAction) return;
+
+      // Construct single row: PROJ FOLDER matches PROJ NAME
+      const newRows = [[
+        batchNumber,
+        driveSize,
+        projName,
+        projName,
+        formattedSize,
+        spaceRemaining,
+        sn
+      ]];
 
       closeModal();
-      backupSheetData.push(newRow[0]);
-      renderTable();
 
-      fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "addMultipleRows", sheetName: TARGET_TAB, rows: newRow })
-      });
+      if (!globalSheetData[activeSheetName]) {
+        globalSheetData[activeSheetName] = [];
+      }
+      
+      const startIndex = globalSheetData[activeSheetName].length;
+      globalSheetData[activeSheetName].push(...newRows);
+
+      switchSheet(activeSheetName, startIndex, newRows.length);
+
+      try {
+        fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "addMultipleRows",
+            sheetName: activeSheetName,
+            rows: newRows
+          })
+        });
+      } catch (err) {
+        console.error("Background sync error:", err);
+      }
     }
 
-    async function loadData() {
-      showLoading("Loading Backup Data...");
+    function getColumnLetter(colIndex) {
+      let letter = "";
+      while (colIndex >= 0) {
+        letter = String.fromCharCode((colIndex % 26) + 65) + letter;
+        colIndex = Math.floor(colIndex / 26) - 1;
+      }
+      return letter;
+    }
+
+    async function loadAllSheets() {
+      showLoading("Loading Spreadsheet Data...");
       try {
         const res = await fetch(API_URL);
         const json = await res.json();
+
         if (json.status === "success") {
-          backupSheetData = json.sheets[TARGET_TAB] || [];
-          renderTable();
+          globalSheetData = json.sheets;
+          const sheetNames = Object.keys(globalSheetData);
+
+          if (sheetNames.length > 0) {
+            renderTabs(sheetNames);
+            
+            // Auto-select 2024-2025 BACKUP tab if it exists, otherwise select first tab
+            const backupTab = sheetNames.find(n => n.trim().toUpperCase().includes("BACKUP"));
+            switchSheet(backupTab || activeSheetName || sheetNames[0]);
+          }
         }
-      } catch(e) { console.error(e); }
-      finally { hideLoading(); }
+      } catch (err) {
+        console.error("Failed to load spreadsheet:", err);
+      } finally {
+        hideLoading();
+      }
     }
 
-    function renderTable() {
-      const table = document.getElementById("excelTable");
-      let html = "<thead><tr><th></th><th>NUMBER</th><th>SIZE</th><th>PROJ NAME</th><th>PROJ FOLDER</th><th>FILE SIZE</th><th>SPACE REMAINING</th><th>S/N</th></tr></thead><tbody>";
-      
-      backupSheetData.forEach((row, rIdx) => {
-        html += `<tr><td class="row-index">${rIdx + 1}</td>`;
-        for (let c = 0; c < 7; c++) {
-          html += `<td>${row[c] !== undefined ? row[c] : ''}</td>`;
-        }
-        html += "</tr>";
+    function renderTabs(names) {
+      const tabsBar = document.getElementById("tabsBar");
+      tabsBar.innerHTML = "";
+
+      names.forEach(name => {
+        const btn = document.createElement("button");
+        btn.className = `tab-button ${name === activeSheetName ? 'active' : ''}`;
+        btn.textContent = name;
+        btn.onclick = () => switchSheet(name);
+        tabsBar.appendChild(btn);
       });
-      html += "</tbody>";
-      table.innerHTML = html;
     }
 
-    loadData();
+    function switchSheet(sheetName, newRowStartIndex = null, newRowCount = 0) {
+      activeSheetName = sheetName;
+      renderTabs(Object.keys(globalSheetData));
+
+      // BUTTON VISIBILITY RULE: Button appears ONLY when active sheet contains "2024-2025 BACKUP"
+      const scanBtn = document.getElementById("btnScanDrive");
+      const cleanName = sheetName.trim().toUpperCase();
+      
+      if (cleanName === "2024-2025 BACKUP") {
+        scanBtn.style.display = "flex";
+      } else {
+        scanBtn.style.display = "none";
+      }
+
+      const gridData = globalSheetData[sheetName] || [];
+      const table = document.getElementById("excelTable");
+      table.innerHTML = "";
+
+      if (gridData.length === 0) {
+        table.innerHTML = "<tr><td style='padding:20px;'>Sheet is empty</td></tr>";
+        return;
+      }
+
+      const maxCols = Math.max(...gridData.map(r => r.length));
+      let headerHTML = "<thead><tr><th></th>";
+      for (let c = 0; c < maxCols; c++) {
+        headerHTML += `<th>${getColumnLetter(c)}</th>`;
+      }
+      headerHTML += "</tr></thead>";
+
+      let bodyHTML = "<tbody>";
+      gridData.forEach((row, rowIndex) => {
+        const isNewlyAdded = (newRowStartIndex !== null && rowIndex >= newRowStartIndex && rowIndex < newRowStartIndex + newRowCount);
+        const rowClass = isNewlyAdded ? "newly-added-row" : "";
+
+        bodyHTML += `<tr id="row-${rowIndex}" class="${rowClass}"><td class="row-index">${rowIndex + 1}</td>`;
+        for (let colIndex = 0; colIndex < maxCols; colIndex++) {
+          const cellValue = row[colIndex] !== undefined ? row[colIndex] : "";
+          
+          bodyHTML += `<td 
+            contenteditable="true" 
+            onkeydown="if(event.key==='Enter'){ event.preventDefault(); this.blur(); }"
+            onblur="saveCellEdit(${rowIndex}, ${colIndex}, this)"
+          >${cellValue}</td>`;
+        }
+        bodyHTML += "</tr>";
+      });
+      bodyHTML += "</tbody>";
+
+      table.innerHTML = headerHTML + bodyHTML;
+
+      if (newRowStartIndex !== null) {
+        setTimeout(() => {
+          const rowElem = document.getElementById(`row-${newRowStartIndex}`);
+          if (rowElem) {
+            rowElem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 80);
+      }
+    }
+
+    function debouncedSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(globalSearch, 300);
+    }
+
+    function globalSearch() {
+      const query = document.getElementById("searchInput").value.toLowerCase().trim();
+      const dropdown = document.getElementById("searchDropdown");
+
+      if (!query || query.length < 2) {
+        dropdown.style.display = "none";
+        dropdown.innerHTML = "";
+        return;
+      }
+
+      let matches = [];
+      const MAX_RESULTS = 15;
+
+      sheetLoop: for (const [sheetName, rows] of Object.entries(globalSheetData)) {
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+          const row = rows[rowIndex];
+          const rowText = row.join(" ").toLowerCase();
+          if (rowText.includes(query)) {
+            const previewText = row.filter(cell => cell !== "" && cell !== null).join(" | ");
+            matches.push({ sheetName, rowIndex, previewText });
+
+            if (matches.length >= MAX_RESULTS) break sheetLoop;
+          }
+        }
+      }
+
+      dropdown.innerHTML = "";
+      if (matches.length === 0) {
+        dropdown.innerHTML = `<div class="dropdown-item" style="color:#888; cursor:default;">No matches found</div>`;
+      } else {
+        matches.forEach(match => {
+          const item = document.createElement("div");
+          item.className = "dropdown-item";
+          item.innerHTML = `
+            <span class="match-text">${match.previewText}</span>
+            <span class="sheet-badge">${match.sheetName} (Row ${match.rowIndex + 1})</span>
+          `;
+          item.onclick = () => {
+            dropdown.style.display = "none";
+            switchSheet(match.sheetName, match.rowIndex);
+          };
+          dropdown.appendChild(item);
+        });
+      }
+
+      dropdown.style.display = "block";
+    }
+
+    document.addEventListener("click", function(e) {
+      if (!e.target.closest(".search-box-wrapper")) {
+        document.getElementById("searchDropdown").style.display = "none";
+      }
+    });
+
+    async function saveCellEdit(rowIndex, colIndex, cellElement) {
+      const newValue = cellElement.innerText.trim();
+      cellElement.classList.add("saving");
+
+      try {
+        await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "updateCell",
+            sheetName: activeSheetName,
+            rowIndex: rowIndex,
+            colIndex: colIndex,
+            value: newValue
+          })
+        });
+
+        if (globalSheetData[activeSheetName] && globalSheetData[activeSheetName][rowIndex]) {
+          globalSheetData[activeSheetName][rowIndex][colIndex] = newValue;
+        }
+
+        cellElement.classList.remove("saving");
+        cellElement.classList.add("saved");
+        setTimeout(() => cellElement.classList.remove("saved"), 1200);
+
+      } catch (err) {
+        console.error("Failed to update cell:", err);
+        cellElement.classList.remove("saving");
+        alert("Failed to save cell edit!");
+      }
+    }
+
+    loadAllSheets();
   </script>
 </body>
 </html>
