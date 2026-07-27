@@ -337,8 +337,8 @@
       
       <div style="display:flex; gap:10px;">
         <div class="form-group" style="flex:1;">
-          <label>BATCH NUMBER (Auto-calculated)</label>
-          <input type="text" id="modalBatchNumber" style="font-weight:bold; color:var(--excel-green);" placeholder="e.g. 2026-001" />
+          <label>BATCH NUMBER (Auto-detected)</label>
+          <input type="text" id="modalBatchNumber" style="font-weight:bold; color:var(--excel-green);" placeholder="e.g. 2025-025" />
         </div>
         <div class="form-group" style="flex:2;">
           <label>PROJ NAME (Drive Label)</label>
@@ -408,38 +408,41 @@
       return parseFloat(val.toFixed(2)) + " " + sizes[i];
     }
 
-    // AUTOMATICALLY DETECTS HIGHEST BATCH NUMBER IN SHEET & INCREMENTS BY 1
+    // FINDS THE LAST INSERTED BATCH AT THE BOTTOM OF THE SHEET AND INCREMENTS IT BY 1
     function getNextBatchNumber() {
-      const currentYear = new Date().getFullYear();
       const sheetRows = globalSheetData[activeSheetName] || [];
       const isBackup = isBackupSheet();
       
-      let maxYear = currentYear;
-      let maxSeq = 0;
-      
-      sheetRows.forEach(row => {
-        const val = String(row[0] || "").trim();
-        if (!val) return;
+      let lastBatchVal = "";
 
-        // Matches formats: "2025-024", "B2024-145", "B2025-001", "2026-005"
-        const match = val.match(/^(?:B)?(\d{4})-(\d+)$/i);
-        if (match) {
-          const year = parseInt(match[1], 10);
-          const seq = parseInt(match[2], 10);
-
-          if (year > maxYear) {
-            maxYear = year;
-            maxSeq = seq;
-          } else if (year === maxYear) {
-            if (seq > maxSeq) {
-              maxSeq = seq;
-            }
-          }
+      // Scan backwards from bottom to top to find the latest batch entry
+      for (let i = sheetRows.length - 1; i >= 0; i--) {
+        const val = String(sheetRows[i][0] || "").trim();
+        if (val && val.match(/^(?:B)?\d{4}-\d+$/i)) {
+          lastBatchVal = val;
+          break;
         }
-      });
+      }
 
-      const nextSeq = String(maxSeq + 1).padStart(3, '0');
-      return isBackup ? `B${maxYear}-${nextSeq}` : `${maxYear}-${nextSeq}`;
+      // Default if sheet is completely empty
+      if (!lastBatchVal) {
+        const currentYear = new Date().getFullYear();
+        return isBackup ? `B${currentYear}-001` : `${currentYear}-001`;
+      }
+
+      // Parse and increment the bottom-most batch number
+      const match = lastBatchVal.match(/^(B)?(\d{4})-(\d+)$/i);
+      if (match) {
+        const prefix = isBackup ? "B" : "";
+        const year = match[2];
+        const seq = parseInt(match[3], 10) + 1;
+        const nextSeqStr = String(seq).padStart(3, '0');
+        
+        return `${prefix}${year}-${nextSeqStr}`;
+      }
+
+      const currentYear = new Date().getFullYear();
+      return isBackup ? `B${currentYear}-001` : `${currentYear}-001`;
     }
 
     async function getFolderSizeRecursive(dirHandle) {
@@ -495,7 +498,6 @@
         totalScannedBytes = 0;
 
         if (isBackupSheet()) {
-          // BACKUP MODE: Get total size of ENTIRE drive/folder as ONE single entry
           totalScannedBytes = await getFolderSizeRecursive(dirHandle);
 
           scannedFolderData.push({
@@ -505,7 +507,6 @@
           });
 
         } else {
-          // NORMAL MODE (2024-2025): Scan subfolders individually
           for await (const entry of dirHandle.values()) {
             const isSystemFolder = entry.name.startsWith('.') || 
                                    entry.name.startsWith('$') || 
@@ -532,7 +533,6 @@
           return;
         }
 
-        // Auto-detect and populate next batch number
         const nextBatchNum = getNextBatchNumber();
         document.getElementById("modalBatchNumber").value = nextBatchNum;
         document.getElementById("modalProjName").value = cleanedProjName;
@@ -658,7 +658,6 @@
       activeSheetName = sheetName;
       renderTabs(Object.keys(globalSheetData));
 
-      // DYNAMIC BUTTON DISPLAY BASED ON ACTIVE SHEET NAME
       const scanBtn = document.getElementById("btnScanDrive");
       const cleanName = sheetName.trim().toUpperCase();
       
