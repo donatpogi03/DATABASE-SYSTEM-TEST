@@ -60,7 +60,7 @@
       cursor: pointer;
       font-weight: 600;
       font-size: 13px;
-      display: none; /* Controlled dynamically by active tab */
+      display: none; /* Dynamic visibility controlled by active tab */
       align-items: center;
       gap: 6px;
     }
@@ -337,7 +337,7 @@
       
       <div style="display:flex; gap:10px;">
         <div class="form-group" style="flex:1;">
-          <label>BATCH NUMBER</label>
+          <label>BATCH NUMBER (Auto-calculated)</label>
           <input type="text" id="modalBatchNumber" style="font-weight:bold; color:var(--excel-green);" placeholder="e.g. 2026-001" />
         </div>
         <div class="form-group" style="flex:2;">
@@ -408,32 +408,38 @@
       return parseFloat(val.toFixed(2)) + " " + sizes[i];
     }
 
+    // AUTOMATICALLY DETECTS HIGHEST BATCH NUMBER IN SHEET & INCREMENTS BY 1
     function getNextBatchNumber() {
       const currentYear = new Date().getFullYear();
       const sheetRows = globalSheetData[activeSheetName] || [];
       const isBackup = isBackupSheet();
       
+      let maxYear = currentYear;
       let maxSeq = 0;
       
       sheetRows.forEach(row => {
-        let val = String(row[0] || "").trim();
-        if (val) {
-          if (isBackup && val.toUpperCase().startsWith("B")) {
-            val = val.substring(1);
-          }
-          const parts = val.split('-');
-          if (parts.length === 2) {
-            const year = parseInt(parts[0], 10);
-            const seq = parseInt(parts[1], 10);
-            if (year === currentYear && !isNaN(seq)) {
-              if (seq > maxSeq) maxSeq = seq;
+        const val = String(row[0] || "").trim();
+        if (!val) return;
+
+        // Matches formats: "2025-024", "B2024-145", "B2025-001", "2026-005"
+        const match = val.match(/^(?:B)?(\d{4})-(\d+)$/i);
+        if (match) {
+          const year = parseInt(match[1], 10);
+          const seq = parseInt(match[2], 10);
+
+          if (year > maxYear) {
+            maxYear = year;
+            maxSeq = seq;
+          } else if (year === maxYear) {
+            if (seq > maxSeq) {
+              maxSeq = seq;
             }
           }
         }
       });
 
       const nextSeq = String(maxSeq + 1).padStart(3, '0');
-      return isBackup ? `B${currentYear}-${nextSeq}` : `${currentYear}-${nextSeq}`;
+      return isBackup ? `B${maxYear}-${nextSeq}` : `${maxYear}-${nextSeq}`;
     }
 
     async function getFolderSizeRecursive(dirHandle) {
@@ -526,6 +532,7 @@
           return;
         }
 
+        // Auto-detect and populate next batch number
         const nextBatchNum = getNextBatchNumber();
         document.getElementById("modalBatchNumber").value = nextBatchNum;
         document.getElementById("modalProjName").value = cleanedProjName;
@@ -571,7 +578,7 @@
         batchNumber,
         driveSize,
         projName,
-        isBackupSheet() ? projName : item.folderName, // In Backup mode, PROJ FOLDER = PROJ NAME
+        isBackupSheet() ? projName : item.folderName,
         item.fileSize,
         spaceRemaining,
         sn
@@ -651,7 +658,7 @@
       activeSheetName = sheetName;
       renderTabs(Object.keys(globalSheetData));
 
-      // DYNAMIC BUTTON DISPLAY BASED ON SHEET NAME
+      // DYNAMIC BUTTON DISPLAY BASED ON ACTIVE SHEET NAME
       const scanBtn = document.getElementById("btnScanDrive");
       const cleanName = sheetName.trim().toUpperCase();
       
