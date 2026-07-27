@@ -315,7 +315,7 @@
   </header>
 
   <div class="toolbar">
-    <button class="btn-add-drive" id="btnScanDrive" onclick="scanDriveFolder()">📁 Scan Drive & Add Rows</button>
+    <button class="btn-add-drive" id="btnScanDrive" onclick="scanDriveFolder()">📁 Scan Master Drive</button>
 
     <div class="search-box-wrapper">
       <input type="text" id="searchInput" placeholder="🔍 Type at least 2 characters to search all sheets..." oninput="debouncedSearch()" autocomplete="off" />
@@ -357,7 +357,6 @@
         </div>
         <div class="form-group" style="flex:1;">
           <label>SERIAL NUMBER (S/N)</label>
-          <!-- Defaults to empty value -->
           <input type="text" id="modalSN" placeholder="Enter S/N manually..." />
         </div>
       </div>
@@ -530,13 +529,11 @@
           return;
         }
 
-        // Auto-detect next batch number
         const nextBatchNum = getNextBatchNumber();
         document.getElementById("modalBatchNumber").value = nextBatchNum;
         document.getElementById("modalProjName").value = cleanedProjName;
         document.getElementById("modalSheetName").textContent = activeSheetName;
         
-        // Reset S/N to ALWAYS BE EMPTY on scan
         document.getElementById("modalSN").value = "";
 
         calculateSpaceRemaining();
@@ -582,7 +579,7 @@
         isBackupSheet() ? projName : item.folderName,
         item.fileSize,
         spaceRemaining,
-        sn // Will insert whatever is typed (or blank)
+        sn
       ]);
 
       closeModal();
@@ -664,7 +661,7 @@
       
       if (cleanName === "2024-2025") {
         scanBtn.style.display = "flex";
-        scanBtn.textContent = "📁 Scan Drive & Add Rows";
+        scanBtn.textContent = "📁 Scan Master Drive";
       } else if (cleanName.includes("BACKUP")) {
         scanBtn.style.display = "flex";
         scanBtn.textContent = "💾 Scan Backup Drive";
