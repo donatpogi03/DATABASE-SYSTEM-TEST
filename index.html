@@ -337,8 +337,9 @@
       
       <div style="display:flex; gap:10px;">
         <div class="form-group" style="flex:1;">
-          <label>BATCH NUMBER (Auto-assigned)</label>
-          <input type="text" id="modalBatchNumber" readonly style="background:#f0f0f0; font-weight:bold; color:var(--excel-green);" />
+          <label>BATCH NUMBER</label>
+          <!-- Changed: Removed 'readonly' and grey background so it is editable -->
+          <input type="text" id="modalBatchNumber" style="font-weight:bold; color:var(--excel-green);" placeholder="e.g. 2026-001" />
         </div>
         <div class="form-group" style="flex:2;">
           <label>PROJ NAME (Drive Label)</label>
@@ -473,7 +474,6 @@
 
         let rawDriveName = dirHandle.name || "";
         
-        // Clean folder/drive name: Remove drive suffixes like " (F:)", " (E:)" or root slashes
         let cleanedProjName = rawDriveName
           .replace(/\s*\([A-Z]:\)/i, '') // Strip "(F:)"
           .replace(/[\/\\]/g, '')        // Strip "/" or "\"
@@ -510,7 +510,6 @@
         const nextBatchNum = getNextBatchNumber();
         document.getElementById("modalBatchNumber").value = nextBatchNum;
 
-        // Auto-insert folder/drive name into PROJ NAME
         document.getElementById("modalProjName").value = cleanedProjName;
         document.getElementById("modalSheetName").textContent = activeSheetName;
         
@@ -537,6 +536,10 @@
       const driveSize = document.getElementById("modalDriveSize").value.trim();
       const spaceRemaining = document.getElementById("modalSpaceRemaining").value.trim();
       const sn = document.getElementById("modalSN").value.trim();
+
+      if (!batchNumber) {
+        return alert("Please enter a BATCH NUMBER!");
+      }
 
       if (!projName) {
         return alert("Please enter a PROJ NAME (Drive Label)!");
