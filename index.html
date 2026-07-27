@@ -60,7 +60,7 @@
       cursor: pointer;
       font-weight: 600;
       font-size: 13px;
-      display: none; /* Hidden by default; visible only on 2024-2025 tab */
+      display: none; /* Controlled dynamically by active tab */
       align-items: center;
       gap: 6px;
     }
@@ -332,13 +332,12 @@
   <!-- Drive Details Confirmation Modal -->
   <div class="modal-overlay" id="driveModal">
     <div class="modal-card">
-      <h3>📁 Drive Scanned - Confirm Details</h3>
-      <p style="font-size:13px; color:#666;">Confirm drive hardware info to insert subfolder entries into tab: <strong id="modalSheetName"></strong></p>
+      <h3 id="modalTitle">📁 Drive Scanned - Confirm Details</h3>
+      <p style="font-size:13px; color:#666;">Confirm details to insert entries into tab: <strong id="modalSheetName"></strong></p>
       
       <div style="display:flex; gap:10px;">
         <div class="form-group" style="flex:1;">
           <label>BATCH NUMBER</label>
-          <!-- Changed: Removed 'readonly' and grey background so it is editable -->
           <input type="text" id="modalBatchNumber" style="font-weight:bold; color:var(--excel-green);" placeholder="e.g. 2026-001" />
         </div>
         <div class="form-group" style="flex:2;">
@@ -363,7 +362,7 @@
       </div>
 
       <div style="margin-top:10px;">
-        <label style="font-size:12px; font-weight:600; color:#555;">Detected Subfolders & Sizes:</label>
+        <label style="font-size:12px; font-weight:600; color:#555;">Detected Details:</label>
         <div id="folderListPreview" style="max-height:120px; overflow-y:auto; background:#f9f9f9; padding:8px; border:1px solid #ddd; font-size:12px; margin-top:4px;"></div>
       </div>
 
@@ -382,6 +381,10 @@
     let searchTimeout = null;
     let scannedFolderData = [];
     let totalScannedBytes = 0;
+
+    function isBackupSheet() {
+      return activeSheetName.trim().toUpperCase().includes("BACKUP");
+    }
 
     function showLoading(msg = "Loading Spreadsheet Data...") {
       document.getElementById("loadingText").textContent = msg;
@@ -408,12 +411,16 @@
     function getNextBatchNumber() {
       const currentYear = new Date().getFullYear();
       const sheetRows = globalSheetData[activeSheetName] || [];
+      const isBackup = isBackupSheet();
       
       let maxSeq = 0;
       
       sheetRows.forEach(row => {
-        const val = String(row[0] || "").trim();
+        let val = String(row[0] || "").trim();
         if (val) {
+          if (isBackup && val.toUpperCase().startsWith("B")) {
+            val = val.substring(1);
+          }
           const parts = val.split('-');
           if (parts.length === 2) {
             const year = parseInt(parts[0], 10);
@@ -426,7 +433,7 @@
       });
 
       const nextSeq = String(maxSeq + 1).padStart(3, '0');
-      return `${currentYear}-${nextSeq}`;
+      return isBackup ? `B${currentYear}-${nextSeq}` : `${currentYear}-${nextSeq}`;
     }
 
     async function getFolderSizeRecursive(dirHandle) {
@@ -470,10 +477,9 @@
       try {
         const dirHandle = await window.showDirectoryPicker();
         
-        showLoading("Scanning drive folders & calculating sizes...");
+        showLoading("Scanning drive contents & calculating size...");
 
         let rawDriveName = dirHandle.name || "";
-        
         let cleanedProjName = rawDriveName
           .replace(/\s*\([A-Z]:\)/i, '') // Strip "(F:)"
           .replace(/[\/\\]/g, '')        // Strip "/" or "\"
@@ -482,41 +488,59 @@
         scannedFolderData = [];
         totalScannedBytes = 0;
 
-        for await (const entry of dirHandle.values()) {
-          const isSystemFolder = entry.name.startsWith('.') || 
-                                 entry.name.startsWith('$') || 
-                                 entry.name === 'System Volume Information' ||
-                                 entry.name === 'FOUND.000';
+        if (isBackupSheet()) {
+          // BACKUP MODE: Get total size of ENTIRE drive/folder as ONE single entry
+          totalScannedBytes = await getFolderSizeRecursive(dirHandle);
 
-          if (entry.kind === 'directory' && !isSystemFolder) {
-            const folderBytes = await getFolderSizeRecursive(entry);
-            totalScannedBytes += folderBytes;
+          scannedFolderData.push({
+            folderName: cleanedProjName,
+            bytes: totalScannedBytes,
+            fileSize: formatBytes(totalScannedBytes)
+          });
 
-            scannedFolderData.push({
-              folderName: entry.name,
-              bytes: folderBytes,
-              fileSize: formatBytes(folderBytes)
-            });
+        } else {
+          // NORMAL MODE (2024-2025): Scan subfolders individually
+          for await (const entry of dirHandle.values()) {
+            const isSystemFolder = entry.name.startsWith('.') || 
+                                   entry.name.startsWith('$') || 
+                                   entry.name === 'System Volume Information' ||
+                                   entry.name === 'FOUND.000';
+
+            if (entry.kind === 'directory' && !isSystemFolder) {
+              const folderBytes = await getFolderSizeRecursive(entry);
+              totalScannedBytes += folderBytes;
+
+              scannedFolderData.push({
+                folderName: entry.name,
+                bytes: folderBytes,
+                fileSize: formatBytes(folderBytes)
+              });
+            }
           }
         }
 
         hideLoading();
 
         if (scannedFolderData.length === 0) {
-          alert("No visible subfolders found in the selected drive!");
+          alert("No items found in the selected location!");
           return;
         }
 
         const nextBatchNum = getNextBatchNumber();
         document.getElementById("modalBatchNumber").value = nextBatchNum;
-
         document.getElementById("modalProjName").value = cleanedProjName;
         document.getElementById("modalSheetName").textContent = activeSheetName;
         
         calculateSpaceRemaining();
 
         const previewList = document.getElementById("folderListPreview");
-        previewList.innerHTML = scannedFolderData.map(f => `<div>📁 <strong>${f.folderName}</strong> (${f.fileSize})</div>`).join('');
+        if (isBackupSheet()) {
+          document.getElementById("modalTitle").textContent = "💾 Backup Drive Scanned";
+          previewList.innerHTML = `<div>📁 <strong>${cleanedProjName} (Full Backup)</strong> — Size: <strong>${formatBytes(totalScannedBytes)}</strong></div>`;
+        } else {
+          document.getElementById("modalTitle").textContent = "📁 Drive Scanned - Confirm Details";
+          previewList.innerHTML = scannedFolderData.map(f => `<div>📁 <strong>${f.folderName}</strong> (${f.fileSize})</div>`).join('');
+        }
 
         document.getElementById("driveModal").style.display = "flex";
 
@@ -537,22 +561,17 @@
       const spaceRemaining = document.getElementById("modalSpaceRemaining").value.trim();
       const sn = document.getElementById("modalSN").value.trim();
 
-      if (!batchNumber) {
-        return alert("Please enter a BATCH NUMBER!");
-      }
+      if (!batchNumber) return alert("Please enter a BATCH NUMBER!");
+      if (!projName) return alert("Please enter a PROJ NAME!");
 
-      if (!projName) {
-        return alert("Please enter a PROJ NAME (Drive Label)!");
-      }
-
-      const confirmAction = confirm(`Are you sure you want to add these ${scannedFolderData.length} items (Batch ${batchNumber}) to database tab "${activeSheetName}"?`);
+      const confirmAction = confirm(`Are you sure you want to add these items (Batch ${batchNumber}) to database tab "${activeSheetName}"?`);
       if (!confirmAction) return;
 
       const newRows = scannedFolderData.map(item => [
         batchNumber,
         driveSize,
         projName,
-        item.folderName,
+        isBackupSheet() ? projName : item.folderName, // In Backup mode, PROJ FOLDER = PROJ NAME
         item.fileSize,
         spaceRemaining,
         sn
@@ -632,10 +651,16 @@
       activeSheetName = sheetName;
       renderTabs(Object.keys(globalSheetData));
 
-      // TAB VISIBILITY CONTROL: Only show Scan Drive button on "2024-2025" sheet
+      // DYNAMIC BUTTON DISPLAY BASED ON SHEET NAME
       const scanBtn = document.getElementById("btnScanDrive");
-      if (sheetName.trim() === "2024-2025") {
+      const cleanName = sheetName.trim().toUpperCase();
+      
+      if (cleanName === "2024-2025") {
         scanBtn.style.display = "flex";
+        scanBtn.textContent = "📁 Scan Drive & Add Rows";
+      } else if (cleanName.includes("BACKUP")) {
+        scanBtn.style.display = "flex";
+        scanBtn.textContent = "💾 Scan Backup Drive";
       } else {
         scanBtn.style.display = "none";
       }
